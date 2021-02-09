@@ -1,0 +1,39 @@
+from _typeshed import FileDescriptor
+import os
+import argparse
+import subprocess
+def store_to_codechecker(analysisoutputPath, codechecker_outputpath, analyzer, projectName):
+        #success, convert to CodeChecker report and store in running server
+        res = subprocess.run(["/home/$USER/codechecker/build/CodeChecker/bin/report-converter", "-t", analyzer, "-o", codechecker_outputpath, analysisoutputPath])
+        if(res.returncode != 0):
+            return False
+        return subprocess.run(["CodeChecker", "store", "-name", projectName]).returncode == 0
+
+def run_fbinfer_on_target(targetDir):
+    files_in_dir = list(filter(lambda x: os.path.isfile(x), os.listdir(targetDir)))
+    infer_invocation_command = ["infer", "run", "--"]
+    os.chdir(os.path.join(targetDir))
+    if "gradlew" in files_in_dir or "gradle" in files_in_dir:
+        infer_invocation_command.extend(["./gradlew", "build"])
+    elif "CMakeLists.txt" in files_in_dir:
+        #invoke with cmake ...
+        print("Cmake to be suppported, for now exiting\n")
+        return False
+    infer_run = subprocess.run(infer_invocation_command, capture_output=True)
+    if(infer_run.returncode != 0):
+        #log error to some file
+        #for now, will print stdout and stderr
+        print(infer_run.stdout + "\n")
+        print(infer_run.stderr)
+        return False
+    else:
+        return store_to_codechecker("./infer-out", "./codechecker_infer_results","fbinfer", os.path.dirname(targetDir))
+
+def run_java_analyzers(basePath):
+    dirs_in_dir = list(filter(lambda x: os.path.isdir(x), os.listdir(basePath)))
+    for d in dirs_in_dir:
+        run_fbinfer_on_target(os.path.abspath(os.path.join(basePath, d)))
+
+if __name__ == "__main__":
+    currPath = os.getcwd()
+    run_java_analyzers(currPath)
