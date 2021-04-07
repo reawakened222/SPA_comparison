@@ -4,7 +4,6 @@ import shutil
 import argparse
 import subprocess
 from sys import stderr
-from . import is_testware_translation_unit
 import xml.etree.ElementTree as ET
 USER = os.environ["USER"]
 CODECHECKER_BIN_PATH = f"/home/{USER}/codechecker/build/CodeChecker/bin/"
