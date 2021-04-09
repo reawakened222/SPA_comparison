@@ -1,5 +1,8 @@
 import ntpath
-
+import glob
+def get_test_files(rootdir, recursive=True, ext=""):
+    file_ext = "*" if ext == "" else ext
+    return glob.glob(f"{rootdir}/**/*test*.{file_ext}", recursive=recursive)
 def is_testware_translation_unit(compile_command_entry):
     return ("test" in str(compile_command_entry["directory"]).lower() or 
             "test" in str(compile_command_entry["file"]).lower())
