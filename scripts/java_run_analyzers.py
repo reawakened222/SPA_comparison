@@ -1,4 +1,3 @@
-from _typeshed import FileDescriptor
 import os
 import shutil
 import argparse

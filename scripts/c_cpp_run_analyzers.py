@@ -1,93 +1,112 @@
 import glob
+import logging
 import os
 import sys
 import json
 import argparse
 from datetime import datetime
+
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from codechecker_things import *
 from testware_functions import *
 
-def filter_compile_command(compile_command_path, stripped_compile_commands_path = "compile_commands_filtered.json"):
+def filter_compile_command(compile_command_path, stripped_compile_commands_path="compile_commands_filtered.json"):
     with open(compile_command_path, "r") as data:
         ccom = json.load(data)
         ccom_testware = list(filter(is_testware_translation_unit, ccom))
         with open(stripped_compile_commands_path, "w+") as outfile:
             outfile.write(json.dumps(ccom_testware))
 
+
 def generate_analysis_output_folderpath(basePath, toolName):
     now = datetime.now()
     analysis_starttime = now.strftime("%Y_%m_%d_%H_%M_%S")
-    cppcheck_output = f"{basePath}/{toolName}_results_{analysis_starttime}"
-    return cppcheck_output
+    analysis_output = f"{basePath}/{toolName}_results_{analysis_starttime}"
+    return analysis_output
 
-def run_cppcheck_on_compilecommand(outdirpath, comp_command):
+
+def run_cppcheck_on_compilecommand(outdirpath, comp_command, isctu):
     resfolder = generate_analysis_output_folderpath(outdirpath, "cppcheck")
-    #Since CppCheck does not create plist folder automatically, we make sure it exists
+    # Since CppCheck does not create plist folder automatically, we make sure it exists
     subprocess.call(["mkdir", "-p", resfolder])
-    retcode = subprocess.call(["cppcheck", "--enable=all", "--inconclusive", 
-                f"--project={comp_command}", #compile commands to use
-                f"--plist-output={resfolder}"]) #output folder
-    if(retcode == 0):
+    retcode = subprocess.call(["cppcheck", "--enable=all", "--inconclusive",
+                               f"--project={comp_command}",  # compile commands to use
+                               f"--plist-output={resfolder}"])  # output folder
+    if retcode == 0:
         print("CppCheck run completed")
 
-def run_codechecker_ctu_on_compilecommand(outdirpath, comp_command):
-    resfolder_ctu = generate_analysis_output_folderpath(outdirpath, "codechecker_ctu")
 
-    retcode = subprocess.call([f"{CODECHECKER_BIN_PATH}/CodeChecker", "analyze", "--ctu-all", "-o", resfolder_ctu, comp_command])
-    if(retcode == 0):
-        print("CodeChecker CTU run completed")
+def run_codechecker_on_compile_command(outdirpath, comp_command, isctu):
+    result_folder_suffix = "_ctu" if isctu else ""
 
-def run_codechecker_on_compilecommand(outdirpath, comp_command):
-    resfolder = generate_analysis_output_folderpath(outdirpath, "codechecker")
+    result_folder = generate_analysis_output_folderpath(outdirpath, f"codechecker{result_folder_suffix}")
 
-    retcode = subprocess.call([f"{CODECHECKER_BIN_PATH}/CodeChecker", "analyze", "-o", resfolder, comp_command])
-    if(retcode == 0):
-        print("CodeChecker run completed")
+    codechecker_command = [f"{CODECHECKER_BIN_PATH}/CodeChecker", "analyze", "-o", result_folder]
 
-def run_tools_on_compilecommand(compcommand_path, runners_are_ctu_pair):
+    #If we've defined a skipfile to use
+    if CODECHECKER_SKIPFILE_PATH:
+        codechecker_command.append("-i", f'"{CODECHECKER_SKIPFILE_PATH}"')
+    if isctu:
+        codechecker_command.append("--ctu-all")
+    codechecker_command.append(comp_command)
+    retcode = subprocess.call(codechecker_command)
+    if retcode == 0:
+        print("CodeChecker run completed\n")
+        if isctu:
+            print("Ran in CTU mode\n")
+    else:
+        logging.debug("Unable to run the following CodeChecker command: " + str(codechecker_command))
+
+def run_tools_on_compilecommand(compcommand_path, runners_and_ctuflag_pair):
     '''Given a list of (possibly CTU-based) tools, run all tools on @compcommand_path'''
-    #Do filtering of compile command to only include testware
+    # Do filtering of compile command to only include testware
     print(compcommand_path)
-    compcom_dirpath,compcomname = os.path.split(compcommand_path)
-    new_compile_command_file = f"{compcom_dirpath}/testware_{compcomname}" 
-    print(f"p: {compcommand_path}\nnew_compile_command_file: {new_compile_command_file}\n")    
+    compcom_dirpath, compcomname = os.path.split(compcommand_path)
+    new_compile_command_file = f"{compcom_dirpath}/testware_{compcomname}"
+    print(f"p: {compcommand_path}\nnew_compile_command_file: {new_compile_command_file}\n")
     filter_compile_command(compcommand_path, new_compile_command_file)
-    
-    for runner,is_ctu in runners_are_ctu_pair:
+
+    for runner, is_ctu in runners_and_ctuflag_pair:
         # Check if it's a CTU analysis, 
         # if so we should include all the build files for the AST generation step
         # Otherwise, run it with the filtered one
         command_file_to_use = compcommand_path if is_ctu else new_compile_command_file
-        runner(compcom_dirpath, command_file_to_use)
+        runner(compcom_dirpath, command_file_to_use, is_ctu)
 
-#Assumes that there is a file with compile commands somewhere in the project
+
+# Assumes that there is a file with compile commands somewhere in the project
 def run_analyzers_on_project(proj_path):
     PROJNAME = os.path.basename(proj_path)
     autogenerated_build_commands = glob.glob(f"{proj_path}/**/compile_commands.json", recursive=True)
     logged_build_commands = glob.glob(f"{proj_path}/**/com.json", recursive=True)
-    
-    #prefer the manually generated compile command file to the one autogenerated by e.g. CMake
-    #Reasonably, if both exist, something was lacking in the first one
+
+    # prefer the manually generated compile command file to the one autogenerated by e.g. CMake
+    # Reasonably, if both exist, something was lacking in the first one
     run_commands = logged_build_commands if logged_build_commands else autogenerated_build_commands
-    if(run_commands):
+    if (run_commands):
         for logs in run_commands:
-            run_tools_on_compilecommand(logs, [(run_codechecker_on_compilecommand, False),
-            (run_codechecker_ctu_on_compilecommand, True), 
-            (run_cppcheck_on_compilecommand, False)])
+            run_tools_on_compilecommand(logs, [(run_codechecker_on_compile_command, False),
+                                               (run_codechecker_on_compile_command, True),
+                                               (run_cppcheck_on_compilecommand, False)])
     else:
         print(f"No build commands found by runner script for project {proj_path}.")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run analysers')
     parser.add_argument('--projpath', '-p', help='Project to run script on')
-    
+    parser.add_argument('--single-project', '-sp', help='run toolchain in single project mode', required=False, default=False)
+
     args = parser.parse_args()
+    print(args)
     os.chdir(args.projpath)
-    #Run tools on all projects
-    #1) Loop through all directories in current working directory
-    #2) get their basename, will be needed for CodeChecker storing later
-    #3) invoke run_* on project
-    dirs = next(os.walk(args.projpath))[1]
-    for d in dirs:
-        run_analyzers_on_project(os.path.abspath(d))
+    # Run tools on all projects
+    # 1) Loop through all directories in current working directory
+    # 2) get their basename, will be needed for CodeChecker storing later
+    # 3) invoke run_* on project
+    if(args.single_project):
+        run_analyzers_on_project(os.path.abspath(args.projpath))
+    else:
+        dirs = next(os.walk(args.projpath))[1]
+        for d in dirs:
+            run_analyzers_on_project(os.path.abspath(d))

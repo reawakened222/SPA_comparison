@@ -3,7 +3,7 @@ import subprocess
 USER = os.environ["HOME"]
 CODECHECKER_BIN_PATH = f"{USER}/codechecker/build/CodeChecker/bin/"
 CODECHECKER_RESULTCONVERTER_PATH = f"${CODECHECKER_BIN_PATH}report-converter"
-
+CODECHECKER_SKIPFILE_PATH = os.environ["CCHECKER_SKIPNONTESTSFILE"]
 def store_to_codechecker(analysis_outputpath, codechecker_outputpath, analyzer, project_name, conversion_required=True, store_name_suffix=""):
     if(conversion_required):
         res = subprocess.run([CODECHECKER_RESULTCONVERTER_PATH, "-t", 
