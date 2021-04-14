@@ -1,12 +1,12 @@
-import subprocess
 import glob
 import os
+import sys
 import json
 import argparse
 from datetime import datetime
-from . import is_testware_translation_unit
-USER = os.environ["USER"]
-CODECHECKER_BIN_PATH = f"/home/{USER}/codechecker/build/CodeChecker/bin/"
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+from codechecker_things import *
+from testware_functions import *
 
 def filter_compile_command(compile_command_path, stripped_compile_commands_path = "compile_commands_filtered.json"):
     with open(compile_command_path, "r") as data:
@@ -14,12 +14,6 @@ def filter_compile_command(compile_command_path, stripped_compile_commands_path 
         ccom_testware = list(filter(is_testware_translation_unit, ccom))
         with open(stripped_compile_commands_path, "w+") as outfile:
             outfile.write(json.dumps(ccom_testware))
-def store_to_codechecker(analysis_outputpath, codechecker_outputpath, analyzer, project_name):
-        #success, convert to CodeChecker report and store in running server
-        res = subprocess.run([f"{CODECHECKER_BIN_PATH}/report-converter", "-t", analyzer, "-o", codechecker_outputpath, analysis_outputpath])
-        if(res.returncode != 0):
-            return False
-        return subprocess.run(["CodeChecker", "store", "-name", project_name]).returncode == 0
 
 def generate_analysis_output_folderpath(basePath, toolName):
     now = datetime.now()

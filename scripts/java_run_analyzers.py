@@ -6,18 +6,8 @@ import subprocess
 from sys import stderr
 import xml.etree.ElementTree as ET
 from .compile_commands_filter import filter_compile_command
-USER = os.environ["USER"]
-CODECHECKER_BIN_PATH = f"/home/{USER}/codechecker/build/CodeChecker/bin/"
-CODECHECKER_RESULTCONVERTER_PATH = f"${CODECHECKER_BIN_PATH}report-converter"
+from .codechecker_things import store_to_codechecker
 PMD_INSTALL_PATH = os.environ["PMD_PATH"] #Path to Java ruleset xml file
-
-def store_to_codechecker(analysis_outputpath, codechecker_outputpath, analyzer, project_name):
-    #success, convert to CodeChecker report and store in running server
-    res = subprocess.run([CODECHECKER_RESULTCONVERTER_PATH, "-t", 
-    analyzer, "-o", codechecker_outputpath, analysis_outputpath])
-    if(res.returncode != 0):
-        return False
-    return subprocess.run(["CodeChecker", "store", "-name", project_name + "_" + analyzer]).returncode == 0
 def run_spotbugs_on_target(resultdir, targetdir):
     subprocess.call(["mkdir", "-p", resultdir])
     SPOTBUGS_RESULT_FILE = f"{resultdir}/spotbugs_bugs.xml"
