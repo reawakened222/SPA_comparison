@@ -25,18 +25,18 @@ def generate_analysis_output_folderpath(basePath, toolName):
     return analysis_output
 
 
-def run_cppcheck_on_compilecommand(outdirpath, comp_command, isctu):
+def run_cppcheck_on_compilecommand(outdirpath, compile_command_database_path, isctu):
     resfolder = generate_analysis_output_folderpath(outdirpath, "cppcheck")
     # Since CppCheck does not create plist folder automatically, we make sure it exists
     subprocess.call(["mkdir", "-p", resfolder])
     retcode = subprocess.call(["cppcheck", "--enable=all", "--inconclusive",
-                               f"--project={comp_command}",  # compile commands to use
+                               f"--project={compile_command_database_path}",  # compile commands to use
                                f"--plist-output={resfolder}"])  # output folder
     if retcode == 0:
         print("CppCheck run completed")
 
 
-def run_codechecker_on_compile_command(outdirpath, comp_command, isctu):
+def run_codechecker_on_compile_command(outdirpath, compile_command_database_path, isctu):
     result_folder_suffix = "_ctu" if isctu else ""
 
     result_folder = generate_analysis_output_folderpath(outdirpath, f"codechecker{result_folder_suffix}")
@@ -45,10 +45,10 @@ def run_codechecker_on_compile_command(outdirpath, comp_command, isctu):
 
     #If we've defined a skipfile to use
     if CODECHECKER_SKIPFILE_PATH:
-        codechecker_command.append("-i", f'"{CODECHECKER_SKIPFILE_PATH}"')
+        codechecker_command.extend(["-i", CODECHECKER_SKIPFILE_PATH])
     if isctu:
         codechecker_command.append("--ctu-all")
-    codechecker_command.append(comp_command)
+    codechecker_command.append(compile_command_database_path)
     retcode = subprocess.call(codechecker_command)
     if retcode == 0:
         print("CodeChecker run completed\n")
@@ -86,8 +86,8 @@ def run_analyzers_on_project(proj_path):
     if (run_commands):
         for logs in run_commands:
             run_tools_on_compilecommand(logs, [(run_codechecker_on_compile_command, False),
-                                               (run_codechecker_on_compile_command, True),
-                                               (run_cppcheck_on_compilecommand, False)])
+                                               (run_codechecker_on_compile_command, True)])#,
+                                               #(run_cppcheck_on_compilecommand, False)])
     else:
         print(f"No build commands found by runner script for project {proj_path}.")
 
