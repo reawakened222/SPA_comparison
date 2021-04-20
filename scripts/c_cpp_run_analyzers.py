@@ -7,7 +7,7 @@ import argparse
 from datetime import datetime
 
 # sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
-from codechecker_things import *
+from codechecker_interface import *
 from testware_functions import *
 
 

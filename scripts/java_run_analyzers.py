@@ -1,7 +1,7 @@
 import shutil
 import xml.etree.ElementTree as ET
 from .compile_commands_filter import *
-from .codechecker_things import *
+from codechecker_interface import *
 
 PMD_INSTALL_PATH = os.environ["PMD_PATH"]  # Path to Java ruleset xml file
 
@@ -15,8 +15,8 @@ def run_spotbugs_on_target(resultdir, targetdir):
         print("Spotbugs run failed on " + targetdir + "\n")
         return False
     return convert_and_store_to_codechecker(spotbugs_result_file,
-                                            resultdir + "/codechecker_results_spotbugs",
-                                            "spotbugs", os.path.dirname(targetdir))
+                                                                  resultdir + "/spotbugs_results",
+                                            "spotbugs", os.path.dirname(targetdir) + "_spotbugs")
 
 
 def add_task_to_ant_build(build_xml, property_string, target_strings):
@@ -75,7 +75,7 @@ def run_pmd_on_target(resultdir, targetdir):
             # send results to CodeChecker
             convert_and_store_to_codechecker(
                 f"{pmd_result_file}",
-                f"{resultdir}/codechecker_pmd_results",
+                f"{resultdir}/pmd_results",
                 "pmd",
                 os.path.dirname(targetdir))
         # clean up, replace modified build with original (backed up)
@@ -94,7 +94,7 @@ def run_pmd_on_target(resultdir, targetdir):
         if res.returncode == pmd_violations_found_errorcode:
             convert_and_store_to_codechecker(
                 f"{pmd_result_file}",
-                f"{resultdir}/codechecker_pmd_results",
+                f"{resultdir}/pmd_results",
                 "pmd",
                 os.path.dirname(targetdir))
 
@@ -123,8 +123,8 @@ def run_fbinfer_on_target(resultdir, targetdir):
         print(infer_run.stderr)
         return False
     else:
-        return convert_and_store_to_codechecker(f"{resultdir}/infer-out", f"{resultdir}/codechecker_infer_results",
-                                                "fbinfer", os.path.dirname(targetdir))
+        return convert_and_store_to_codechecker(f"{resultdir}/infer-out", f"{resultdir}/infer_results",
+                                                "fbinfer", f'"{os.path.dirname(targetdir)}_infer"')
 
 
 def run_java_analyzers(base_path):

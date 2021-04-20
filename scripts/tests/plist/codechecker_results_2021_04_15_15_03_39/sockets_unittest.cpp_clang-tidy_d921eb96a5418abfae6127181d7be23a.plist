@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>diagnostics</key>
+	<array>
+		<dict>
+			<key>category</key>
+			<string>google</string>
+			<key>check_name</key>
+			<string>google-global-names-in-headers</string>
+			<key>description</key>
+			<string>using declarations in the global namespace in headers are prohibited</string>
+			<key>issue_hash_content_of_line_in_context</key>
+			<string>5df9472755cc6dd7648bfc8b63a61bc3</string>
+			<key>location</key>
+			<dict>
+				<key>col</key>
+				<integer>1</integer>
+				<key>file</key>
+				<integer>1</integer>
+				<key>line</key>
+				<integer>26</integer>
+			</dict>
+			<key>path</key>
+			<array>
+				<dict>
+					<key>depth</key>
+					<integer>0</integer>
+					<key>kind</key>
+					<string>event</string>
+					<key>location</key>
+					<dict>
+						<key>col</key>
+						<integer>1</integer>
+						<key>file</key>
+						<integer>1</integer>
+						<key>line</key>
+						<integer>26</integer>
+					</dict>
+					<key>message</key>
+					<string>using declarations in the global namespace in headers are prohibited</string>
+				</dict>
+			</array>
+			<key>type</key>
+			<string>clang-tidy</string>
+		</dict>
+	</array>
+	<key>files</key>
+	<array>
+		<string>/home/jmm01/spa_comparison/C_Cpp/target/CMake_ABLE/mrpt/libs/comms/src/sockets_unittest.cpp</string>
+		<string>/home/jmm01/spa_comparison/C_Cpp/target/CMake_ABLE/mrpt/samples/comms_socket_example/SocketsTest_impl.cpp</string>
+	</array>
+</dict>
+</plist>

@@ -1,0 +1,5 @@
+-*/CMakeFiles/*
++*/[tT]est*/*
++*/*[Tt]est*.c
++*/*[Tt]est*.cpp
+-*
