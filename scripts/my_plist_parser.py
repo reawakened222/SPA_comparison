@@ -36,7 +36,21 @@ def get_plist_reports_tool_pair(plist_result_dir) -> Tuple[Dict[int, str], List[
     return plist_reports_remove_empties, tool_name
 
 
-def get_potential_report_duplicates(plist_result_directories):
+def collapse_reports_toolpair_list(reports_tool_list: List[Tuple[Report, str]]) -> List[Tuple[List[Report], str]]:
+    """
+    Given a list of (report, checktool) pairs, it returns the corresponding (List[Report], checktool) list
+    """
+    if not reports_tool_list:
+        return []
+    else:
+        current_tool = reports_tool_list[0][1]
+        tmp = list(map(lambda e: e[0],
+                       filter(lambda res_tool_pair: current_tool == res_tool_pair[1], reports_tool_list)))
+        rest = list(filter(lambda res_tool_pair: current_tool != res_tool_pair[1], reports_tool_list))
+        return [(tmp, current_tool)] + collapse_reports_toolpair_list(rest)
+
+
+def get_reports_per_file(plist_result_directories):
     """
     Given a list of plist report directories
     map it to a (plist reports, tool) pair
@@ -49,18 +63,22 @@ def get_potential_report_duplicates(plist_result_directories):
         for files, reports in files_reports_list:
             # And finally, we get access to the report itself.
             # Note, we use the filepath property to get the path to the main file
-            # This is not necessarily the file with index 0, so we cannot simply append the entire list :(
+            # This is not necessarily the file with index 0, so we cannot simply append the entire list
             for report in reports:
                 report_main_file = report.file_path
                 if report_main_file not in reports_key_val_map:
                     reports_key_val_map[report_main_file] = []
                 reports_key_val_map[report_main_file].append((report, tool_run))
-    return reports_key_val_map
+
+    collapsed_reports_tool_pair = dict(map(lambda e: (e[0], collapse_reports_toolpair_list(e[1])),
+                                           reports_key_val_map.items()))
+
+    return collapsed_reports_tool_pair
 
 
 def run_on_project_result(project_report_path):
     result_directories = [filepath.absolute() for filepath in pathlib.Path(project_report_path).glob('./*results*')]
-    return get_potential_report_duplicates(result_directories)
+    return get_reports_per_file(result_directories)
 
 
 if __name__ == "__main__":
