@@ -36,6 +36,17 @@ def get_plist_reports_tool_pair(plist_result_dir) -> Tuple[Dict[int, str], List[
     return plist_reports_remove_empties, tool_name
 
 
+def collapse_reports_toolpair_list(reports_tool_list: List[Tuple[Report, str]]) -> List[Tuple[List[Report], str]]:
+    if not reports_tool_list:
+        return []
+    else:
+        current_tool = reports_tool_list[0][1]
+        tmp = list(map(lambda e: e[0],
+                       filter(lambda res_tool_pair: current_tool == res_tool_pair[1], reports_tool_list)))
+        rest = list(filter(lambda res_tool_pair: current_tool != res_tool_pair[1], reports_tool_list))
+        return [(tmp, current_tool)] + collapse_reports_toolpair_list(rest)
+
+
 def get_potential_report_duplicates(plist_result_directories):
     """
     Given a list of plist report directories
@@ -49,12 +60,16 @@ def get_potential_report_duplicates(plist_result_directories):
         for files, reports in files_reports_list:
             # And finally, we get access to the report itself.
             # Note, we use the filepath property to get the path to the main file
-            # This is not necessarily the file with index 0, so we cannot simply append the entire list :(
+            # This is not necessarily the file with index 0, so we cannot simply append the entire list
             for report in reports:
                 report_main_file = report.file_path
                 if report_main_file not in reports_key_val_map:
                     reports_key_val_map[report_main_file] = []
                 reports_key_val_map[report_main_file].append((report, tool_run))
+
+    collapsed_reports_tool_pair = dict(map(lambda e: (e[0], collapsed_reports_tool_pair(e[1])),
+                                           reports_key_val_map.items()))
+
     return reports_key_val_map
 
 
