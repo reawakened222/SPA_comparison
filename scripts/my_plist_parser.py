@@ -7,6 +7,7 @@ import pathlib
 import re
 from typing import List, Dict, Tuple
 from codechecker_common.report import Report
+from enum import Enum
 
 
 def prettify(dir_name):
@@ -46,6 +47,7 @@ def collapse_reports_toolpair_list(reports_tool_list: List[Tuple[Report, str]]) 
         current_tool = reports_tool_list[0][1]
         tmp = list(map(lambda e: e[0],
                        filter(lambda res_tool_pair: current_tool == res_tool_pair[1], reports_tool_list)))
+        tmp.sort(key=lambda r: r.line)  # Make sure reports are sorted by line
         rest = list(filter(lambda res_tool_pair: current_tool != res_tool_pair[1], reports_tool_list))
         return [(tmp, current_tool)] + collapse_reports_toolpair_list(rest)
 
@@ -74,6 +76,37 @@ def get_reports_per_file(plist_result_directories):
                                            reports_key_val_map.items()))
 
     return collapsed_reports_tool_pair
+
+class DuplicateRelations(Enum):
+    NO_DUPLICATE = 0,
+    SUBSUMPTION = 1,
+    POTENTIAL_DUPLICATE = 2
+
+def is_duplicate(w1 : Report,w2 : Report, col_distance = 0,row_distance = 0) -> DuplicateRelations:
+    # 1) Warning originates in the same file - done already, remove this check to save effort
+    # 1a) Warning/Checker is identical: Duplicate (potential CTU vs non-CTU run)
+    # 2) Warning originates on the same line
+    if abs(w1.line - w2.line) > row_distance:
+        return DuplicateRelations.NO_DUPLICATE
+    if w1.check_name == w2.check_name:
+        return DuplicateRelations.SUBSUMPTION
+    else:
+        return DuplicateRelations.NO_DUPLICATE if abs(w1.col - w2.col) > col_distance else DuplicateRelations.POTENTIAL_DUPLICATE
+
+
+def mark_potential_duplicates(reports_tool_list):
+    """Group potential duplicate reports based on heuristics
+    """
+
+    unique_reports = []  # Reports only covered by one tool in the set, e.g. if the incoming list has length 1
+    duplicate_reports = []  # This should be a tuple of reports, one tuple for each duplicate
+    list_length = len(reports_tool_list)
+    if list_length == 1:
+        # for this file, only one tool found issues. Tools should not cause duplicates themselves
+        return reports_tool_list, []
+    else:
+        raise NotImplemented  # TODO:
+
 
 
 def run_on_project_result(project_report_path):
