@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>clang_version</key>
+	<string>clang version 11.1.0 (https://github.com/llvm/llvm-project.git 1fdec59bffc11ae37eb51a1b9869f0696bfd5312)</string>
+	<key>diagnostics</key>
+	<array>
+		<dict>
+			<key>ExecutedLines</key>
+			<dict>
+				<key>1</key>
+				<array>
+					<integer>71</integer>
+				</array>
+			</dict>
+			<key>category</key>
+			<string>Security</string>
+			<key>check_name</key>
+			<string>security.FloatLoopCounter</string>
+			<key>description</key>
+			<string>Variable 'dist' with floating point type 'double' should not be used as a loop counter</string>
+			<key>issue_context</key>
+			<string>TestBody</string>
+			<key>issue_context_kind</key>
+			<string>C++ method</string>
+			<key>issue_hash_content_of_line_in_context</key>
+			<string>cf177ca5328933e4fa1670558afb2193</string>
+			<key>issue_hash_function_offset</key>
+			<string>54</string>
+			<key>location</key>
+			<dict>
+				<key>col</key>
+				<integer>4</integer>
+				<key>file</key>
+				<integer>0</integer>
+				<key>line</key>
+				<integer>71</integer>
+			</dict>
+			<key>macro_expansions</key>
+			<array/>
+			<key>path</key>
+			<array>
+				<dict>
+					<key>depth</key>
+					<integer>0</integer>
+					<key>extended_message</key>
+					<string>Variable 'dist' with floating point type 'double' should not be used as a loop counter</string>
+					<key>kind</key>
+					<string>event</string>
+					<key>location</key>
+					<dict>
+						<key>col</key>
+						<integer>4</integer>
+						<key>file</key>
+						<integer>0</integer>
+						<key>line</key>
+						<integer>71</integer>
+					</dict>
+					<key>message</key>
+					<string>Variable 'dist' with floating point type 'double' should not be used as a loop counter</string>
+					<key>ranges</key>
+					<array>
+						<array>
+							<dict>
+								<key>col</key>
+								<integer>28</integer>
+								<key>file</key>
+								<integer>0</integer>
+								<key>line</key>
+								<integer>71</integer>
+							</dict>
+							<dict>
+								<key>col</key>
+								<integer>31</integer>
+								<key>file</key>
+								<integer>0</integer>
+								<key>line</key>
+								<integer>71</integer>
+							</dict>
+						</array>
+						<array>
+							<dict>
+								<key>col</key>
+								<integer>50</integer>
+								<key>file</key>
+								<integer>0</integer>
+								<key>line</key>
+								<integer>71</integer>
+							</dict>
+							<dict>
+								<key>col</key>
+								<integer>53</integer>
+								<key>file</key>
+								<integer>0</integer>
+								<key>line</key>
+								<integer>71</integer>
+							</dict>
+						</array>
+					</array>
+				</dict>
+			</array>
+			<key>type</key>
+			<string>Floating point variable used as loop counter</string>
+		</dict>
+	</array>
+	<key>files</key>
+	<array>
+		<string>/home/jmm01/spa_comparison/C_Cpp/target/CMake_ABLE/mrpt/libs/nav/src/tpspace/PTGs_unittest.cpp</string>
+	</array>
+</dict>
+</plist>
