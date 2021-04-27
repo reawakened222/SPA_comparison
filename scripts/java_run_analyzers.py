@@ -1,27 +1,28 @@
-from _typeshed import FileDescriptor
 import os
 import shutil
 import argparse
 import subprocess
 from sys import stderr
 import xml.etree.ElementTree as ET
-from .compile_commands_filter import filter_compile_command
-USER = os.environ["USER"]
-CODECHECKER_BIN_PATH = f"/home/{USER}/codechecker/build/CodeChecker/bin/"
-CODECHECKER_RESULTCONVERTER_PATH = f"${CODECHECKER_BIN_PATH}report-converter"
+import logging
+USER = os.environ["HOME"]
+CODECHECKER_BIN_PATH = f"{USER}/codechecker/build/CodeChecker/bin"
+CODECHECKER_RESULTCONVERTER_PATH = f"{CODECHECKER_BIN_PATH}/report-converter"
 PMD_INSTALL_PATH = os.environ["PMD_PATH"] #Path to Java ruleset xml file
+logging.basicConfig(filename='spa_javaInvocation.log', encoding='utf-8', level=logging.DEBUG, format='%(asctime)s %(message)s\n')
 
 def store_to_codechecker(analysis_outputpath, codechecker_outputpath, analyzer, project_name):
     #success, convert to CodeChecker report and store in running server
     res = subprocess.run([CODECHECKER_RESULTCONVERTER_PATH, "-t", 
     analyzer, "-o", codechecker_outputpath, analysis_outputpath])
     if(res.returncode != 0):
+        logging.warning(f"Parsing results of {analyzer} run on {project_name} did not work as expected")
         return False
     return subprocess.run(["CodeChecker", "store", "-name", project_name + "_" + analyzer]).returncode == 0
 def run_spotbugs_on_target(resultdir, targetdir):
     subprocess.call(["mkdir", "-p", resultdir])
     SPOTBUGS_RESULT_FILE = f"{resultdir}/spotbugs_bugs.xml"
-    res = subprocess.run(["spotbugs", "-xml:withMessages", "-output", 
+    res = subprocess.run(["spotbugs", "-xml:withMessages", "-workHard", "-output",
                             SPOTBUGS_RESULT_FILE, "text-ui", targetdir])
     if(res.returncode != 0):
         print("Spotbugs run failed on " + targetdir + "\n")
@@ -109,9 +110,12 @@ def run_fbinfer_on_target(resultdir, targetdir):
     files_in_dir = list(filter(lambda x: os.path.isfile(x), os.listdir(targetdir)))
     infer_invocation_command = ["infer", "run", "--"]
     os.chdir(os.path.join(targetdir))
+    logging.info(f"FB Infer running on {targetdir}")
     if "gradlew" in files_in_dir or "gradle" in files_in_dir:
-        infer_invocation_command.extend(["./gradlew", "build"])
+        print("SPACOMP_LOG: INFER GRADLE BUILD ON " + targetdir)
+        infer_invocation_command.extend(["./gradlew", "test"])
     elif "CMakeLists.txt" in files_in_dir:
+        print("SPACOMP_LOG: INFER CMAKE BUILD ON " + targetdir)
         subprocess.run(["mkdir", "-p", "cmakebuild_compilecommand"])
         os.chdir("cmakebuild_compilecommand")
         subprocess.run(["spacomp_cmake", ".."])
@@ -119,13 +123,20 @@ def run_fbinfer_on_target(resultdir, targetdir):
         os.chdir("..")
         infer_invocation_command = ["infer", "run", "--compilation-database", "cmakebuild_compilecommand/compile_commands.json"]
     elif "build.xml" in files_in_dir:
-        infer_invocation_command.extend(["ant"])
+        logging.info("SPACOMP_LOG: INFER ANT BUILD ON " + targetdir)
+        infer_invocation_command.extend(["ant", "test"])
+    elif "pom.xml" in files_in_dir:
+        logging.info("SPACOMP_LOG: INFER MAVEN BUILD ON " + targetdir)
+        infer_invocation_command.extend(["mvn", "test"])
+    else:
+        logging.warning("No supported build system found")
     infer_run = subprocess.run(infer_invocation_command, capture_output=True)
     if(infer_run.returncode != 0):
         #log error to some file
         #for now, will print stdout and stderr
-        print(infer_run.stdout + "\n")
+        print(str(infer_run.stdout) + "\n")
         print(infer_run.stderr)
+        logging.warning("Error during Infer run")
         return False
     else:
         return store_to_codechecker(f"{resultdir}/infer-out", f"{resultdir}/codechecker_infer_results","fbinfer", os.path.dirname(targetdir))
@@ -133,9 +144,13 @@ def run_fbinfer_on_target(resultdir, targetdir):
 def run_java_analyzers(base_path):
     dirs_in_dir = list(filter(lambda x: os.path.isdir(x), os.listdir(base_path)))
     for d in dirs_in_dir:
-        run_fbinfer_on_target("infer_results",os.path.abspath(os.path.join(base_path, d)))
-        run_pmd_on_target("pmd_results",os.path.abspath(os.path.join(base_path, d)))
-        run_spotbugs_on_target("spotbugs_results",os.path.abspath(os.path.join(base_path, d)))
+        try:
+            logging.info("Running on project " + str(d) + "\n")
+            run_fbinfer_on_target("infer_results",os.path.abspath(os.path.join(base_path, d)))
+            run_pmd_on_target("pmd_results",os.path.abspath(os.path.join(base_path, d)))
+            run_spotbugs_on_target("spotbugs_results",os.path.abspath(os.path.join(base_path, d)))
+        except Exception as e:
+            print(f"SPACOMP_LOG: Following exception raised on {d}: " + str(e))
 
 if __name__ == "__main__":
     currPath = os.getcwd()
