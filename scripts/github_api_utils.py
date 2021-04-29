@@ -119,14 +119,14 @@ def eval_example(github_user):
 
 def make_clone_script():
     parser = argparse.ArgumentParser(description="github search wrapper")
-    parser.add_argument('-s', '--size', default=20000, help="provide minimum size in kb")
+    parser.add_argument('-s', '--size', default=100000, help="provide minimum size in kb")
     parser.add_argument('-st', '--stars', default=1000, help="provide minimum number of stars")
     parser.add_argument('-f', '--forks', default=100, help="provide minimum number of forks")
     parser.add_argument('-langs', '--languages', nargs='*',
                         default=['C', 'C++'], help="Provide Main languages to search for")
     parser.add_argument('-sp', '--searchphrase', help="Provide search string to use (will target readme file")
     args = parser.parse_args()
-
+    #python3 github_api_utils.py --size=100000 --stars=1000 --forks=100 --languages=["Java"] --searchphrase="test"
     search = SearchData(args.stars, args.forks, args.size, args.searchphrase, args.languages).toSearchString()
     now = datetime.now()
     dt_string = now.strftime("%d%m%y_%H_%M_%S")

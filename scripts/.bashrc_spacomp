@@ -119,29 +119,14 @@ fi
 alias giturl='git config --get remote.origin.url'
 
 export PATH="~/codechecker/build/CodeChecker/bin:$PATH"
-export PATH="~/gradle/gradle-6.7.1/bin:$PATH"
 alias pmd="$HOME/myapps/pmd-bin-6.30.0/bin/run.sh pmd"
 export PMD_PATH="$HOME/myapps/pmd-bin-6.30.0"
 export ANT_OPTS="-Xmx1024m -Xms512m"
-#Add environment variable COCOS_CONSOLE_ROOT for cocos2d-x
-export COCOS_CONSOLE_ROOT="/home/$USER/Git_Repos/spa_comparison/C_Cpp/target/cocos2d-x/tools/cocos2d-console/bin"
-export PATH=$COCOS_CONSOLE_ROOT:$PATH
 
-# Add environment variable COCOS_X_ROOT for cocos2d-x
-export COCOS_X_ROOT="/home/$USER/Git_Repos/spa_comparison/C_Cpp/target"
-export PATH=$COCOS_X_ROOT:$PATH
-
-# Add environment variable COCOS_TEMPLATES_ROOT for cocos2d-x
-export COCOS_TEMPLATES_ROOT="/home/$USER/Git_Repos/spa_comparison/C_Cpp/target/cocos2d-x/templates"
-export PATH=$COCOS_TEMPLATES_ROOT:$PATH
-
-export PATH="/home/$USER/myapps/Qt5/gcc_64/bin:$PATH"
-
-export RACER_PATH="/home/$USER/llvm-repo/build_release/bin/racer"
 export LOC_COUNTER_PATH=`which cloc`
 export COMPLEXITY_TOOL=`which pmccabe`
 alias pip=pip3
-source ~/.bashrc_envconstants
+#source ~/.bashrc_envconstants
 export CCHECKER_SKIPNONTESTSFILE="/home/$USER/spa_comparison/C_Cpp/codechecker_skipfile"
 export CMAKE_PREFIX_PATH="/usr/local:$PATH"
 export CC_LOGGER_ABS_PATH=1
@@ -154,6 +139,3 @@ spacomp_analyscppcheckfunc() {
 alias spacomp_analyscppcheck="spacomp_analyscppcheckfunc ./cppcheck_results"
 alias spacomp_cmake='cmake -G "Unix Makefiles" -DCMAKE_EXPORT_COMPILE_COMMANDS=TRUE -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=ON -DBUILD_TESTING=ON' 
 alias git_modrec='git submodule update --recursive --init'
-alias m_racer="/home/jmm01/llvm-repo/build_release/bin/racer --cg"
-
-alias m_racer_genrun="python3 /home/jmm01/llvm-repo/clang/tools/Racer/utils/compile_command_wrapper.py"
