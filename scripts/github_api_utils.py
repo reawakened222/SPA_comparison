@@ -3,7 +3,7 @@ import os
 import enum
 import argparse
 import json  # For serializing
-import requests # For Rest API calls
+import requests  # For Rest API calls
 import copy
 from datetime import datetime
 from functools import partial
@@ -30,21 +30,21 @@ class SearchData:
     size_in_kb = 20000
     stars = 1000
     forks = 1000
-    searchstring = "test"
+    search_string = "test"
     languages = ["C", "C++"]
 
-    def __init__(self, stars, forks, sizeKB, searchstring, langs):
+    def __init__(self, stars, forks, size_in_kb, search_string, language_list):
         self.stars = SearchParameter(tag="stars", value=stars)
         self.forks = SearchParameter(tag="forks", value=forks)
-        self.size_in_kb = SearchParameter(tag="size", value=sizeKB)
-        self.languages = langs
-        self.searchstring = searchstring + " in:readme"
+        self.size_in_kb = SearchParameter(tag="size", value=size_in_kb)
+        self.languages = language_list
+        self.search_string = search_string + " in:readme"
 
-    def toSearchString(self):
-        langs = ""
+    def to_search_string(self):
+        language_string = ""
         for lang in self.languages:
-            langs += f"language:{lang} "
-        return f"{self.stars} {self.forks} {self.size_in_kb} {langs} {self.searchstring}"
+            language_string += f"language:{lang} "
+        return f"{self.stars} {self.forks} {self.size_in_kb} {language_string} {self.search_string}"
 
 
 def isListEmpty(_list: list):
@@ -52,10 +52,10 @@ def isListEmpty(_list: list):
     return bool(_list)
 
 
-def git_is_directory_name_substring_in_repo(pygit, repoName, folderName, recursive=False):
+def git_is_directory_name_substring_in_repo(pygit, repo_name, folder_name, recursive=False):
     """Returns path to folder if it exists"""
     # https://pygithub.readthedocs.io/en/latest/examples/Repository.html#get-all-of-the-contents-of-the-root-directory-of-the-repository
-    repo = pygit.get_repo(repoName)
+    repo = pygit.get_repo(repo_name)
     contents = repo.get_contents("")
     root_contents = copy.copy(contents)
     dirs = []
@@ -69,9 +69,10 @@ def git_is_directory_name_substring_in_repo(pygit, repoName, folderName, recursi
     else:
         dirs = list(map(lambda x: (x.path.lower(), x.type == "dir"), contents))
     # dirs should contain all directories of interest, traverse and check for folderName
-    dirs_matching_search = [i for (i, isDir) in dirs if folderName in i and isDir]
+    dirs_matching_search = [i for (i, isDir) in dirs if folder_name in i and isDir]
 
     # for now, will hack in a check for CMake here, to reduce API calls
+    # TODO: Extend to determine additional build systems
     return (isListEmpty(dirs_matching_search), isListEmpty(git_is_cmake_project(pygit, root_contents)))
     # return isListEmpty(dirs_matching_search)
 
@@ -96,13 +97,20 @@ def filter_on_languages(language_size_pairs, repository):
             return True
     return False
 
+
 def filter_on_testware_language(languages, repository):
     """Filter based on what languages are used to implement test code"""
     # The basic idea is to find testware folders, then somehow find the languages used
     # Worst case approach is to clone them, run e.g. cloc and then based on the result include/exclude them
 
 
-def apply_filters_log_filtering(repolist, repository_filters):
+def filter_on_project_loc_size(languages_and_minimal_size_pairs, repository):
+    """Based on
+    https://stackoverflow.com/questions/26881441/can-you-get-the-number-of-lines-of-code-from-a-github-repository
+    the simplest way seems to be to shallow clone it, run e.g. cloc and then parse results"""
+
+
+def apply_filters_log_filtering(repo_list, repository_filters):
     """Given a list of repositories, we filter (with logging) based on the set of filters supplied"""
     # Filtering
     # 1) language (general)

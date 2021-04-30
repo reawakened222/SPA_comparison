@@ -4,3 +4,4 @@ target/*
 */C_Cpp/target/*
 */C_Cpp/*
 */Python/*
+*.log
