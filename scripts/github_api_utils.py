@@ -1,24 +1,28 @@
 import logging
 
+from collections import namedtuple
 from github import Github
 import os
 import re
+import xml.etree.ElementTree as ET
 import enum
 import argparse
 import json  # For serializing
 import requests  # For Rest API calls
 import copy
+from enum import Enum
 import random
 import itertools
 from datetime import datetime
 from functools import partial
 import subprocess
 from dotenv import load_dotenv
+
 load_dotenv(".env")
 token = os.getenv('GITHUB_TOKEN', '...')
 CLOC_BIN = os.getenv("CLOC_BIN", '/usr/bin/cloc')
 
-logging.basicConfig(filename="GITHUB_LOG.log",format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+logging.basicConfig(filename="GITHUB_LOG.log", format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
 
 
 class SearchParameter:
@@ -57,7 +61,7 @@ class SearchData:
         return f"{self.stars} {self.forks} {self.size_in_kb} {language_string} {self.search_string}"
 
 
-def isListEmpty(_list: list):
+def is_list_empty(_list: list):
     # Note: Empty list should convert to false in statement below
     return bool(_list)
 
@@ -83,7 +87,7 @@ def git_is_directory_name_substring_in_repo(pygit, repo_name, folder_name, recur
 
     # for now, will hack in a check for CMake here, to reduce API calls
     # TODO: Extend to determine additional build systems
-    return (isListEmpty(dirs_matching_search), isListEmpty(git_is_cmake_project(pygit, root_contents)))
+    return is_list_empty(dirs_matching_search), is_list_empty(git_is_cmake_project(pygit, root_contents))
     # return isListEmpty(dirs_matching_search)
 
 
@@ -104,15 +108,9 @@ def get_projects_from_user(py_git, username):
 # Note: Github's API gives size value in bytes, this is ~10MB of code in C/C++, Java or Python
 min_size_in_bytes = 10 * 1000 * 1000
 general_lang_sizes = [("C++", min_size_in_bytes),
-                       ("C", min_size_in_bytes),
-                       ("Java", min_size_in_bytes),
-                       ("Python", min_size_in_bytes)]
-# And this is low/upper bound for mid-size project
-midsize_project = (50000, 100000)
-LoC_lang_sizes_midsize_project = dict({("C++", midsize_project),
-                                       ("C", midsize_project),
-                                       ("Java", midsize_project),
-                                       ("Python", midsize_project)})
+                      ("C", min_size_in_bytes),
+                      ("Java", min_size_in_bytes),
+                      ("Python", min_size_in_bytes)]
 
 
 def filter_on_languages(language_size_dict, repository):
@@ -131,29 +129,75 @@ def filter_on_languages(language_size_dict, repository):
             return True
     return False
 
-# TODO: FIX THIS
-cloc_result_pattern = re.compile("\n((?:\S| )+?)\s*?(\d+)\s*?(\d+)\s*?(\d+)\s*?(\d+)")
-def cloc_invocation(languages, perl_dir_filter="", top_folder = "."):
-    directory_filter = " --match-d="+ perl_dir_filter + " " if perl_dir_filter != "" else " "
-    invocation = [CLOC_BIN, f'--include-lang={",".join(languages)}']
+
+class ProjectSize(Enum):
+    Tiny = 0,
+    Small = 1,
+    Medium = 2,
+    Large = 3
+
+
+cloc_result_pattern = re.compile(r"\\n(?P<Lang>(?:\S| )+?)\s*(?P<NumFiles>\d+)\s*(?P<NumBlank>\d+)\s*(?P<NumComment>\d+)\s*(?P<NumCode>\d+)", flags=re.MULTILINE)
+class ClocData:
+    lang_data = dict()
+
+    def __init__(self, lang_data_dict):
+        self.lang_data = lang_data_dict
+
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            return self.lang_data[item]
+        return None
+
+    @staticmethod
+    def make_from_string(cloc_output):
+        root = ET.fromstring(cloc_output)
+        langs = root.find("languages")
+        if not langs:
+            return None
+        lang_data_dict = dict()
+        #<language name="Python" files_count="4117" blank="169932" comment="222976" code="702812" />
+        for l in langs:
+            if l.tag == "language":
+                attr = l.attrib
+                LangData = namedtuple("LangData", ["files", "blank", "commented", "code"])
+                lang_data_dict[attr["name"]] = LangData(int(attr["files_count"]), int(attr["blank"]),
+                                                        int(attr["comment"]), int(attr["code"]))
+
+        return ClocData(lang_data_dict)
+
+    def classify(self, language = "C++"):
+        """Return Small, Medium, or large-scale based on #LoC for languages of interest"""
+        # Small = <10k LoC
+        # Medium <100k LoC
+        # Large >100k LoC
+        result = ProjectSize.Tiny
+        size = self.lang_data.get(language)
+        if not size:
+            return None
+        else:
+            if size.code < 10000:
+                result = ProjectSize.Small if result < ProjectSize.Small else result
+            elif size.code < 100000:
+                result = ProjectSize.Medium if result < ProjectSize.Medium else result
+            else:
+                result = ProjectSize.Large
+        return result
+
+def cloc_invocation(languages, perl_dir_filter="", top_folder="."):
+    directory_filter = " --match-d=" + perl_dir_filter + " " if perl_dir_filter != "" else " "
+    invocation = [CLOC_BIN, f'--include-lang={",".join(languages)}', '--xml', '--quiet']
     if directory_filter != " ":
         invocation.append(directory_filter)
     invocation.append(top_folder)
     cloc_res = subprocess.run(invocation, capture_output=True)
     if cloc_res.returncode == 0:
         # Parse stdout
-        counted = str(cloc_res.stdout)
-        languages = counted.split("-------------------------------------------------------------------------------")[2]
+        output = cloc_res.stdout.decode("utf-8").strip()
+        cloc = ClocData.make_from_string(output)
+        return cloc
 
-        matches = cloc_result_pattern.findall(languages)
-        if matches:
-            print(matches)
-
-
-
-    return cloc_res.returncode
-
-
+    return None
 
 
 def filter_on_testware_language(languages, repository):
@@ -162,30 +206,34 @@ def filter_on_testware_language(languages, repository):
     # Worst case approach is to clone them, run e.g. cloc and then based on the result include/exclude them
 
 
-def filter_on_project_loc_size(languages_and_minimal_size_pairs, repository):
+def filter_on_project_loc_size(size_classes_to_keep, repository):
     """Filtering based on LoC"""
     """Based on
     https://stackoverflow.com/questions/26881441/can-you-get-the-number-of-lines-of-code-from-a-github-repository
     the simplest way seems to be to shallow clone it, run e.g. cloc and then parse results"""
 
 
-def apply_filters_log_filtering(repo_list, repository_filters):
+def apply_filters_log_filtering(repo_list, repository_filters_explanation, log_filename):
     """Given a list of repositories, we filter (with logging) based on the set of filters supplied.
     Result will be a list of the list of projects that were left after each filter step"""
+    with open(log_filename, "w") as log:
+        # Each iteration generates a new subset using current filter function
+        def inner(repos, filters, acc):
+            if not filters:
+                return acc
+            f_head, *f_tail = filters
+            filter_function, explanation_text = f_head
+            filtered_repositories = [r for r in repos if filter_function(r)]
+            filtered_repositories_names = map(lambda e: e.full_name, filtered_repositories)
+            log.write(explanation_text + "\n")
+            log.writelines(filtered_repositories_names)
+            log.write("\n")
+            acc.append(filtered_repositories)
 
-    def inner(repos, filters, acc):
-        if not filters:
-            return acc
-        f_head, *f_tail = filters
-        filtered_repositories = [r for r in repos if f_head(r)] # filter(f_head, repos)
-        acc.append(filtered_repositories)
-        return inner(filtered_repositories, f_tail, acc)
+            return inner(filtered_repositories, f_tail, acc)
 
-
-#    reduced_list = list(itertools.islice(repo_list, 100))
-#    return inner(reduced_list, repository_filters, [reduced_list])
-    # I want to keep each step of the filtering, will make it easier for data extraction
-    return inner(repo_list, repository_filters, [repo_list])
+        # I want to keep each step of the filtering, will make it easier for data extraction
+        return inner(repo_list, repository_filters_explanation, [repo_list])
 
 
 def eval_example(github_user):
@@ -193,17 +241,14 @@ def eval_example(github_user):
     repos = get_projects_from_user(g, github_user)
 
     if not repos:
-        logging.DEBUG("No repositories returned from user: " + github_user)
+        logging.debug("No repositories returned from user: " + github_user)
         return None
     # Partial applications of filter configuration on filter functions
     # Should return a function for which the remaining argument is the repository object from pygit
-    filters = [partial(filter_on_languages, general_lang_sizes)]
-    filtered_projects = apply_filters_log_filtering(repos, filters)
-    with open("Filtered_Projects.log", "w") as out_file:
-        for r in filtered_projects[-1]:
-            out_file.write(r.__str__())
-            out_file.write("\n")
-
+    #filters = [(partial(filter_on_languages, general_lang_sizes), "Filtering based on overall code size using " + general_lang_sizes),
+    #           (partial(filter_on_project_loc_size, [ProjectSize.Medium, ProjectSize.Large],"Filtering based on LoC"))]
+    filters = [(partial(filter_on_languages, general_lang_sizes), "Filtering based on overall code size using " + general_lang_sizes)]
+    filtered_projects = apply_filters_log_filtering(repos, filters, github_user + "_FilteredProjects1.log")
 
 
 def make_clone_script():
@@ -231,15 +276,16 @@ def make_clone_script():
             repositories = g.search_repositories(query=search)
             for repo in repositories:
                 print(repo.full_name)
-                hasTestDir, hasCMakeFile = git_is_directory_name_substring_in_repo(g, repo.full_name, "test", False)
+                has_test_dir, has_cmake_file = git_is_directory_name_substring_in_repo(g, repo.full_name, "test", False)
                 git_command = f"git clone --depth 1 --recurse-submodules https://github.com/{repo.full_name} || :\n"
-                if hasTestDir:
+                if has_test_dir:
                     outfile.write(git_command)
-                    if hasCMakeFile:
+                    if has_cmake_file:
                         outfile2.write(git_command)
 
 
 if __name__ == "__main__":
     # make_clone_script()
-    #eval_example("Apache")
-    cloc_invocation(languages=["C", "C++", "\"C/C++ Header\"", "Python", "Java"], perl_dir_filter="", top_folder="/home/jmm01/Git_Repos/KAzNU/apac")
+    eval_example("ericsson")
+    # cloc_invocation(languages=["C", "C++", 'C/C++ Header', "Python", "Java"], perl_dir_filter="",
+    #                top_folder="/home/jmm01/Git_Repos/KAzNU/apac")
