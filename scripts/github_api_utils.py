@@ -1,5 +1,6 @@
 import logging
 
+from pathlib import Path
 from collections import namedtuple
 from github import Github
 import os
@@ -10,7 +11,7 @@ import argparse
 import json  # For serializing
 import requests  # For Rest API calls
 import copy
-from enum import Enum
+from enum import IntEnum
 import random
 import itertools
 from datetime import datetime
@@ -24,6 +25,12 @@ CLOC_BIN = os.getenv("CLOC_BIN", '/usr/bin/cloc')
 
 logging.basicConfig(filename="GITHUB_LOG.log", format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
 
+
+class APIException(BaseException):
+    # TODO: implement some exception stuff
+    def __init__(self, expression, message):
+        self.expression = expression
+        self.message = message
 
 class SearchParameter:
     value = 0
@@ -105,8 +112,8 @@ def get_projects_from_user(py_git, username):
 # Filtering
 # 1) language (general)
 # 2) Language + size (test)
-# Note: Github's API gives size value in bytes, this is ~10MB of code in C/C++, Java or Python
-min_size_in_bytes = 10 * 1000 * 1000
+# Note: Github's API gives size value in bytes, this is ~1MB of code in C/C++, Java or Python
+min_size_in_bytes = 1 * 1000 * 1000
 general_lang_sizes = [("C++", min_size_in_bytes),
                       ("C", min_size_in_bytes),
                       ("Java", min_size_in_bytes),
@@ -116,33 +123,35 @@ general_lang_sizes = [("C++", min_size_in_bytes),
 def filter_on_languages(language_size_dict, repository):
     """Filter based on the overall languages used, in number of bytes"""
     language_lookup = requests.get(repository.languages_url).json()
-    repository_languages = language_lookup.items()
-    if not repository_languages:
+    if not language_lookup:
         return False
-
+    err = language_lookup.get("message")
+    if err and "rate limit" in err:
+        raise API
     # total_size = sum(map(lambda e: int(e[1]), language_lookup.items()))
 
     # This is a fixed length for each run
     for requested_lang, lang_min_size in language_size_dict:
-        size_for_repo = repository_languages.get(requested_lang)
+        size_for_repo = language_lookup.get(requested_lang)
         if size_for_repo and size_for_repo >= lang_min_size:
             return True
     return False
 
 
-class ProjectSize(Enum):
+class ProjectSize(IntEnum):
     Tiny = 0,
     Small = 1,
     Medium = 2,
     Large = 3
 
 
-cloc_result_pattern = re.compile(r"\\n(?P<Lang>(?:\S| )+?)\s*(?P<NumFiles>\d+)\s*(?P<NumBlank>\d+)\s*(?P<NumComment>\d+)\s*(?P<NumCode>\d+)", flags=re.MULTILINE)
 class ClocData:
+    project_path = ""
     lang_data = dict()
 
-    def __init__(self, lang_data_dict):
+    def __init__(self, lang_data_dict, path):
         self.lang_data = lang_data_dict
+        self.project_path = path
 
     def __getitem__(self, item):
         if isinstance(item, str):
@@ -150,13 +159,12 @@ class ClocData:
         return None
 
     @staticmethod
-    def make_from_string(cloc_output):
+    def make_from_string(cloc_output, run_path):
         root = ET.fromstring(cloc_output)
         langs = root.find("languages")
         if not langs:
             return None
         lang_data_dict = dict()
-        #<language name="Python" files_count="4117" blank="169932" comment="222976" code="702812" />
         for l in langs:
             if l.tag == "language":
                 attr = l.attrib
@@ -164,13 +172,13 @@ class ClocData:
                 lang_data_dict[attr["name"]] = LangData(int(attr["files_count"]), int(attr["blank"]),
                                                         int(attr["comment"]), int(attr["code"]))
 
-        return ClocData(lang_data_dict)
+        return ClocData(lang_data_dict, run_path)
 
-    def classify(self, language = "C++"):
-        """Return Small, Medium, or large-scale based on #LoC for languages of interest"""
+    def classify(self, language="C++"):
+        """Return Small, Medium, or large-scale based on #LoC for language of interest"""
         # Small = <10k LoC
         # Medium <100k LoC
-        # Large >100k LoC
+        # Large >=100k LoC
         result = ProjectSize.Tiny
         size = self.lang_data.get(language)
         if not size:
@@ -184,7 +192,13 @@ class ClocData:
                 result = ProjectSize.Large
         return result
 
-def cloc_invocation(languages, perl_dir_filter="", top_folder="."):
+    def get_project_sizes_sorted(self, languages):
+        """Get a list of language, size class pairs, sorted in descending order"""
+        sizes = [(l, self.classify(l)) for l in languages if self.classify(l)]
+        sizes.sort(key=lambda e: e[1], reverse=True)
+        return sizes
+
+def cloc_invocation(languages, top_folder=".", perl_dir_filter=""):
     directory_filter = " --match-d=" + perl_dir_filter + " " if perl_dir_filter != "" else " "
     invocation = [CLOC_BIN, f'--include-lang={",".join(languages)}', '--xml', '--quiet']
     if directory_filter != " ":
@@ -192,11 +206,8 @@ def cloc_invocation(languages, perl_dir_filter="", top_folder="."):
     invocation.append(top_folder)
     cloc_res = subprocess.run(invocation, capture_output=True)
     if cloc_res.returncode == 0:
-        # Parse stdout
         output = cloc_res.stdout.decode("utf-8").strip()
-        cloc = ClocData.make_from_string(output)
-        return cloc
-
+        return ClocData.make_from_string(output, top_folder)
     return None
 
 
@@ -204,27 +215,51 @@ def filter_on_testware_language(languages, repository):
     """Filter based on what languages are used to implement test code"""
     # The basic idea is to find testware folders, then somehow find the languages used
     # Worst case approach is to clone them, run e.g. cloc and then based on the result include/exclude them
+    cloc = cloc_invocation(languages, repository.full_name, '.*[tT]est.*')
+    if cloc:
+        for l in languages:
+            #  false if less than 1k lines of code in test folder
+            if cloc.classify(l) > ProjectSize.Tiny:
+                return True
+    return False
 
 
-def filter_on_project_loc_size(size_classes_to_keep, repository):
+def filter_on_project_loc_size(languages, size_classes_to_keep, repository):
     """Filtering based on LoC"""
     """Based on
     https://stackoverflow.com/questions/26881441/can-you-get-the-number-of-lines-of-code-from-a-github-repository
     the simplest way seems to be to shallow clone it, run e.g. cloc and then parse results"""
+    res = subprocess.run(["git", "clone", "--depth", "1", repository.clone_url, repository.full_name])
+    if res.returncode == 128:
+        # Return code for "destination already exists"
+        return True  # We assume this has already been filtered once
+    cloc = cloc_invocation(languages, repository.full_name)
+    if cloc:
+        repo_size_classes = [e[1] for e in cloc.get_project_sizes_sorted(languages)]
+        for s in size_classes_to_keep:
+            if s in repo_size_classes:
+                return True
+    else:
+        return False
 
 
 def apply_filters_log_filtering(repo_list, repository_filters_explanation, log_filename):
     """Given a list of repositories, we filter (with logging) based on the set of filters supplied.
     Result will be a list of the list of projects that were left after each filter step"""
+    Path("./.FILTERDATA").mkdir(parents=True, exist_ok=True)
+    os.chdir("./.FILTERDATA")
     with open(log_filename, "w") as log:
         # Each iteration generates a new subset using current filter function
         def inner(repos, filters, acc):
             if not filters:
                 return acc
+            if not repos:
+                log.write("No more repositories. Exiting ...")
+                return acc
             f_head, *f_tail = filters
             filter_function, explanation_text = f_head
             filtered_repositories = [r for r in repos if filter_function(r)]
-            filtered_repositories_names = map(lambda e: e.full_name, filtered_repositories)
+            filtered_repositories_names = map(lambda e: e.full_name + "\n", filtered_repositories)
             log.write(explanation_text + "\n")
             log.writelines(filtered_repositories_names)
             log.write("\n")
@@ -245,10 +280,10 @@ def eval_example(github_user):
         return None
     # Partial applications of filter configuration on filter functions
     # Should return a function for which the remaining argument is the repository object from pygit
-    #filters = [(partial(filter_on_languages, general_lang_sizes), "Filtering based on overall code size using " + general_lang_sizes),
-    #           (partial(filter_on_project_loc_size, [ProjectSize.Medium, ProjectSize.Large],"Filtering based on LoC"))]
-    filters = [(partial(filter_on_languages, general_lang_sizes), "Filtering based on overall code size using " + general_lang_sizes)]
-    filtered_projects = apply_filters_log_filtering(repos, filters, github_user + "_FilteredProjects1.log")
+    filters = [(partial(filter_on_languages, general_lang_sizes), "Filtering based on overall code size using >=~1MB of code in C/C++, Java or Python"),
+               (partial(filter_on_project_loc_size, ["C", "C++", 'C/C++ Header', "Python", "Java"], [ProjectSize.Medium, ProjectSize.Large]), "Filtering based on LoC"),
+               (partial(filter_on_testware_language, ["C", "C++", "Python", "Java"]), "Filtering based on Testware LoC")]
+    filtered_projects = apply_filters_log_filtering(repos, filters, github_user + "_FilteredProjects.log")
 
 
 def make_clone_script():
@@ -286,6 +321,6 @@ def make_clone_script():
 
 if __name__ == "__main__":
     # make_clone_script()
-    eval_example("ericsson")
+    eval_example("Ericsson")
     # cloc_invocation(languages=["C", "C++", 'C/C++ Header', "Python", "Java"], perl_dir_filter="",
     #                top_folder="/home/jmm01/Git_Repos/KAzNU/apac")
