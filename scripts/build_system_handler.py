@@ -19,10 +19,10 @@ def determine_build_system(base_dir):
     elif "CMakeLists.txt" in files_in_dir:
         return BuildSystems.CMake
     elif "build.xml" in files_in_dir:
-        return  BuildSystems.Ant
+        return BuildSystems.Ant
     elif "pom.xml" in files_in_dir:
         return BuildSystems.Maven
-    elif "BUILD" in files_in_dir:
+    elif "BUILD.bazel" in files_in_dir:
         return BuildSystems.Bazel
     else:
         return BuildSystems.UNSUPPORTED
