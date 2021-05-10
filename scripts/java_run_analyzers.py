@@ -1,16 +1,19 @@
+import pathlib
 import shutil
 import xml.etree.ElementTree as ET
 import logging
-USER = os.environ["HOME"]
-CODECHECKER_BIN_PATH = f"{USER}/codechecker/build/CodeChecker/bin"
-CODECHECKER_RESULTCONVERTER_PATH = f"{CODECHECKER_BIN_PATH}/report-converter"
-PMD_INSTALL_PATH = os.environ["PMD_PATH"] #Path to Java ruleset xml file
-logging.basicConfig(filename='spa_javaInvocation.log', encoding='utf-8', level=logging.DEBUG, format='%(asctime)s %(message)s\n')
+import os
+from dotenv import load_dotenv
 
-from .compile_commands_filter import *
 from codechecker_interface import *
+from build_system_handler import *
 
-PMD_INSTALL_PATH = os.environ["PMD_PATH"]  # Path to Java ruleset xml file
+load_dotenv(".env")
+USER = os.getenv("HOME")
+PMD_INSTALL_PATH = os.getenv("PMD_PATH") #Path to Java ruleset xml file
+
+logging.basicConfig(filename='spa_javaInvocation.log', level=logging.DEBUG, format='%(asctime)s %(message)s\n')
+LOG = logging.getLogger("SPA_JAVA")
 
 
 def run_spotbugs_on_target(resultdir, targetdir):
@@ -107,14 +110,18 @@ def run_pmd_on_target(resultdir, targetdir):
 
 
 def run_fbinfer_on_target(resultdir, targetdir):
-    files_in_dir = list(filter(lambda x: os.path.isfile(x), os.listdir(targetdir)))
+    build_system = determine_build_system(targetdir)
     infer_invocation_command = ["infer", "run", "--"]
     os.chdir(os.path.join(targetdir))
-    logging.info(f"FB Infer running on {targetdir}")
-    if "gradlew" in files_in_dir or "gradle" in files_in_dir:
-        print("SPACOMP_LOG: INFER GRADLE BUILD ON " + targetdir)
-        infer_invocation_command.extend(["./gradlew", "test"])
-    elif "CMakeLists.txt" in files_in_dir:
+    LOG.info(f"FB Infer running on {targetdir}")
+    if build_system == BuildSystems.UNSUPPORTED:
+        LOG.warning("No supported build system found to build ")
+    elif build_system == BuildSystems.Ant:
+        LOG.info("SPACOMP_LOG: INFER ANT BUILD ON " + targetdir)
+        infer_invocation_command.extend(["ant", "test"])
+    elif build_system == BuildSystems.Bazel:
+        infer_invocation_command.extend(["bazel", "test"])
+    elif build_system == BuildSystems.CMake:
         print("SPACOMP_LOG: INFER CMAKE BUILD ON " + targetdir)
         subprocess.run(["mkdir", "-p", "cmakebuild_compilecommand"])
         os.chdir("cmakebuild_compilecommand")
@@ -123,38 +130,33 @@ def run_fbinfer_on_target(resultdir, targetdir):
         os.chdir("..")
         infer_invocation_command = ["infer", "run", "--compilation-database",
                                     "cmakebuild_compilecommand/compile_commands.json"]
-    elif "build.xml" in files_in_dir:
-        logging.info("SPACOMP_LOG: INFER ANT BUILD ON " + targetdir)
-        infer_invocation_command.extend(["ant", "test"])
-    elif "pom.xml" in files_in_dir:
-        logging.info("SPACOMP_LOG: INFER MAVEN BUILD ON " + targetdir)
+    elif build_system == BuildSystems.Gradle:
+        print("SPACOMP_LOG: INFER GRADLE BUILD ON " + targetdir)
+        infer_invocation_command.extend(["./gradlew", "test"])
+    elif build_system == BuildSystems.Maven:
+        LOG.info("SPACOMP_LOG: INFER MAVEN BUILD ON " + targetdir)
         infer_invocation_command.extend(["mvn", "test"])
-    else:
-        logging.warning("No supported build system found")
     infer_run = subprocess.run(infer_invocation_command, capture_output=True)
     if infer_run.returncode != 0:
         # log error to some file
         # for now, will print stdout and stderr
         print(str(infer_run.stdout) + "\n")
         print(infer_run.stderr)
-        logging.warning("Error during Infer run")
+        LOG.warning("Error during Infer run")
         return False
     else:
         return convert_and_store_to_codechecker(f"{resultdir}/infer-out", f"{resultdir}/infer_results",
                                                 "fbinfer", f'"{os.path.dirname(targetdir)}_infer"')
 
 
-def run_java_analyzers(base_path):
-    dirs_in_dir = list(filter(lambda x: os.path.isdir(x), os.listdir(base_path)))
-    for d in dirs_in_dir:
-        try:
-            logging.info("Running on project " + str(d) + "\n")
-            run_fbinfer_on_target("infer_results",os.path.abspath(os.path.join(base_path, d)))
-            run_pmd_on_target("pmd_results",os.path.abspath(os.path.join(base_path, d)))
-            run_spotbugs_on_target("spotbugs_results",os.path.abspath(os.path.join(base_path, d)))
-        except Exception as e:
-            print(f"SPACOMP_LOG: Following exception raised on {d}: " + str(e))
+def run_java_analyzers(project_base_path):
+        LOG.info("Running on project " + str(project_base_path) + "\n")
+        run_fbinfer_on_target("infer_results",os.path.abspath(project_base_path))
+        run_pmd_on_target("pmd_results",os.path.abspath(project_base_path))
+        run_spotbugs_on_target("spotbugs_results",os.path.abspath(project_base_path))
+
 
 if __name__ == "__main__":
     currPath = os.getcwd()
-    run_java_analyzers(currPath)
+    #run_java_analyzers(currPath)
+    run_java_analyzers(pathlib.Path('./Case_Study/ecchronos').absolute())

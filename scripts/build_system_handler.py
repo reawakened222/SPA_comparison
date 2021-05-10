@@ -13,7 +13,8 @@ class BuildSystems(Enum):
 
 
 def determine_build_system(base_dir):
-    files_in_dir = [f for f in os.listdir(base_dir) if os.path.isfile(f)]
+    files_in_dir = [f for f in os.listdir(base_dir)]
+
     if "gradlew" in files_in_dir or "gradle" in files_in_dir:
         return BuildSystems.Gradle
     elif "CMakeLists.txt" in files_in_dir:

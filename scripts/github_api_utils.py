@@ -112,6 +112,17 @@ general_lang_sizes = [("C++", min_size_in_bytes),
                       ("C", min_size_in_bytes),
                       ("Java", min_size_in_bytes),
                       ("Python", min_size_in_bytes)]
+# 3 years
+max_time_since_update = 365 * 3
+today_date = datetime.today()
+
+
+def filter_on_activity(max_days_since_update_allowed, repository):
+    """Filter based on the number of days since last update was made to project."""
+    # While there is a updated_at property, it seems to consider non-data related updates, so will use pushed_at for now
+    repo_update_date = repository.pushed_at
+    date_diff = today_date - repo_update_date
+    return date_diff.days <= max_days_since_update_allowed
 
 
 def filter_on_languages(language_size_dict, repository):
@@ -185,6 +196,7 @@ def apply_filters_log_filtering(repo_list, repository_filters_explanation, log_f
                 LOG.debug("No more repositories. Exiting ...")
                 break
             filter_function, explanation_text = f_head
+            print(f"Filtering with filter: {explanation_text}\n")
             filtered_repositories = [r for r in repos if filter_function(r)]
             filtered_repositories_names = [r.full_name for r in filtered_repositories]
             xml_log.write(f'\t<Filter note="{explanation_text}" amount="{len(filtered_repositories)}">\n')
@@ -225,11 +237,14 @@ def eval_example(github_user):
     # Should return a function for which the remaining argument is the repository object from pygit
     filters = [(partial(filter_on_languages, general_lang_sizes),
                 "Filtering based on overall code size using >=~1MB of code in C/C++, Java or Python"),
+               (partial(filter_on_activity, max_time_since_update),
+                "Filtering based on time since last activity: <= " + str(max_time_since_update) + " days"),
                (partial(filter_on_project_loc_size, ["C", "C++", 'C/C++ Header', "Python", "Java"],
-                        [ProjectSize.Medium, ProjectSize.Large]), "Filtering based on LoC count overall (>10000 LoC in any of the langauges listed)"),
+                        [ProjectSize.Medium, ProjectSize.Large]),
+                "Filtering based on LoC count overall (>10000 LoC in any of the languages listed)"),
                (
-               partial(filter_on_testware_language, ["C", "C++", "Python", "Java"]), "Filtering based on Testware LoC (>1000 Lines of tests)")]
-    #filters = filters[slice(1)]  # For debug purposes
+               partial(filter_on_testware_language, ["C", "C++", "Python", "Java"]),
+               "Filtering based on Testware LoC (>1000 Lines of tests)")]
     filtered_projects = apply_filters_log_filtering(repos, filters, github_user + "_FilteredProjects.xml")
 
 
@@ -267,4 +282,5 @@ def make_clone_script():
 
 if __name__ == "__main__":
     # make_clone_script()
+    eval_example("Ericsson")
     eval_example("Google")
