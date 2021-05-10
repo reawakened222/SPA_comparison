@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 HOME = os.environ["HOME"]
+
 CODECHECKER_PATH = f"{HOME}/codechecker"
 CODECHECKER_SCRIPTS_DIR = f"{CODECHECKER_PATH}/codechecker-common"
 CODECHECKER_BIN_PATH = f"{CODECHECKER_PATH}/build/CodeChecker/bin/"

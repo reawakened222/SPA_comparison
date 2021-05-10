@@ -10,6 +10,8 @@ from datetime import datetime
 from codechecker_interface import *
 from testware_functions import *
 
+logging.basicConfig(filename='C_CPP.log', filemode='w', format='%(asctime)s %(message)s')
+LOG = logging.getLogger("C_CPP")
 
 def filter_compile_command(compile_command_path, filtered_commands_path="compile_commands_filtered.json"):
     with open(compile_command_path, "r") as data:
@@ -26,6 +28,15 @@ def generate_analysis_output_folderpath(base_path, tool_name):
     return analysis_output
 
 
+def analysis_postprocess(result_folder, tool_name, project_name):
+    """For tools that need to do post-processing on results before submitting to the framework"""
+    def first_to_upper(word):
+        return str(word[0].upper()) + word[1:]
+    LOG.info(first_to_upper(tool_name) + " run completed on " + project_name)
+    converted_result_folder = os.path.join(result_folder, tool_name + "_results_converted")
+    return convert_and_store_to_codechecker(result_folder, converted_result_folder, tool_name, project_name)
+
+
 def run_cppcheck_on_compilecommand(outdirpath, compile_command_database_path, isctu, project_name):
     result_folder = generate_analysis_output_folderpath(outdirpath, "cppcheck")
     # Since CppCheck does not create output folders automatically, we must make sure it exists
@@ -34,9 +45,17 @@ def run_cppcheck_on_compilecommand(outdirpath, compile_command_database_path, is
                                f"--project={compile_command_database_path}",  # compile commands to use
                                f"--plist-output={result_folder}"])  # output folder
     if retcode == 0:
-        print("CppCheck run completed")
-        converted_result_folder = os.path.join(result_folder, "cppcheck_results_converted")
-        return convert_and_store_to_codechecker(result_folder, converted_result_folder, "cppcheck", project_name)
+        analysis_postprocess(result_folder, "cppcheck", project_name)
+
+
+def run_infer_on_compilecommand(outdirpath, compile_command_database_path, project_name):
+    result_folder = generate_analysis_output_folderpath(outdirpath, "infer")
+
+    retcode = subprocess.call(["infer", "run",
+                               "-o", result_folder,  # output folder
+                               "--compilation-database", compile_command_database_path])
+    if retcode == 0:
+        analysis_postprocess(result_folder, "infer", project_name)
 
 
 def run_codechecker_on_compile_command(outdirpath, compile_command_database_path, isctu, project_name):
