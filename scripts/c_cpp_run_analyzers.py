@@ -13,6 +13,8 @@ from testware_functions import *
 logging.basicConfig(filename='C_CPP.log', filemode='w', format='%(asctime)s %(message)s')
 LOG = logging.getLogger("C_CPP")
 
+ON_TESTCODE_ONLY = False
+
 def filter_compile_command(compile_command_path, filtered_commands_path="compile_commands_filtered.json"):
     with open(compile_command_path, "r") as data:
         compile_commands = json.load(data)
@@ -30,8 +32,10 @@ def generate_analysis_output_folderpath(base_path, tool_name):
 
 def analysis_postprocess(result_folder, tool_name, project_name):
     """For tools that need to do post-processing on results before submitting to the framework"""
+
     def first_to_upper(word):
         return str(word[0].upper()) + word[1:]
+
     LOG.info(first_to_upper(tool_name) + " run completed on " + project_name)
     converted_result_folder = os.path.join(result_folder, tool_name + "_results_converted")
     return convert_and_store_to_codechecker(result_folder, converted_result_folder, tool_name, project_name)
@@ -61,7 +65,7 @@ def run_infer_on_compilecommand(outdirpath, compile_command_database_path, proje
 def run_codechecker_on_compile_command(outdirpath, compile_command_database_path, isctu, project_name):
     result_folder_suffix = "_ctu" if isctu else ""
     result_folder = generate_analysis_output_folderpath(outdirpath, f"codechecker{result_folder_suffix}")
-    codechecker_command = [f"{CODECHECKER_BIN_PATH}/CodeChecker", "analyze", "-o", result_folder]
+    codechecker_command = [CODECHECKER_MAINSCRIPT_PATH, "analyze", "-o", result_folder]
 
     # If we've defined a skipfile to use
     if CODECHECKER_SKIPFILE_PATH:
@@ -79,7 +83,7 @@ def run_codechecker_on_compile_command(outdirpath, compile_command_database_path
         logging.debug("Unable to run the following CodeChecker command: " + str(codechecker_command))
 
 
-def run_tools_on_compilecommand(compcommand_path, runners_and_ctuflag_pair, project_name):
+def run_tools_on_compilecommand(compcommand_path, runners_and_ctuflag_pair, project_name, on_testware_only=True):
     """Given a list of (possibly CTU-based) tools, run all tools on @compcommand_path"""
     # Do filtering of compile command to only include testware
     print(compcommand_path)
@@ -92,7 +96,7 @@ def run_tools_on_compilecommand(compcommand_path, runners_and_ctuflag_pair, proj
         # Check if it's a CTU analysis, 
         # if so we should include all the build files for the AST generation step
         # Otherwise, run it with the filtered one
-        command_file_to_use = compcommand_path if is_ctu else new_compile_command_file
+        command_file_to_use = compcommand_path if (is_ctu or not on_testware_only) else new_compile_command_file
         runner(compcom_dirpath, command_file_to_use, is_ctu, project_name)
 
 
@@ -118,10 +122,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run analysers')
     parser.add_argument('--projpath', '-p', help='Project to run script on')
     parser.add_argument('--single-project', '-sp', help='run toolchain in single project mode', required=False,
-                        default=False)
+                        default=True)
+    parser.add_argument('--analyse-only-tests', '-at', help='Whether analysis should only be run on tests',
+                        required=False, default=False)
 
     args = parser.parse_args()
-    print(args)
     os.chdir(args.projpath)
     # Run tools on all projects
     # 1) Loop through all directories in current working directory
