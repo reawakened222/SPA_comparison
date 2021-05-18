@@ -1,4 +1,5 @@
 import logging
+import subprocess
 
 from pathlib import Path
 from github import Github
@@ -17,7 +18,7 @@ token = os.getenv('GITHUB_TOKEN', '...')
 PY_GIT = Github(token)
 CLOC_BIN = os.getenv("CLOC_BIN", '/usr/bin/cloc')
 
-logging.basicConfig(filename="GITHUB_LOG.log", format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.DEBUG)
+logging.basicConfig(filename="GITHUB_LOG.log", format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
 LOG = logging.getLogger("GITHUB")
 
 
@@ -112,8 +113,7 @@ general_lang_sizes = [("C++", min_size_in_bytes),
                       ("C", min_size_in_bytes),
                       ("Java", min_size_in_bytes),
                       ("Python", min_size_in_bytes)]
-# 3 years
-max_time_since_update = 365 * 3
+max_time_since_update = 365 * 1
 today_date = datetime.today()
 
 
@@ -166,11 +166,12 @@ def filter_on_project_loc_size(languages, size_classes_to_keep, repository):
     if repository.default_branch == 'main':
         cmd.extend(["--depth", "1"])
     else:
-        LOG.debug(f"Potential issue: following repository does not default to main - {repository}. Pulling everything ...")
+        LOG.debug(f"Potential issue: following repository does not default to main - {repository.full_name}. Pulling everything ...")
     cmd.extend([repository.clone_url, repository.full_name])
-    #if res.returncode == 128:
+    res = subprocess.run(cmd)
+    if res.returncode == 128:
         # Return code for "destination already exists"
-    #    return True  # We assume this has already been filtered once
+        return True  # We assume this has already been filtered once
     cloc = cloc_invocation(languages, repository.full_name)
     if cloc:
         repo_size_classes = [e[1] for e in cloc.get_project_sizes_sorted(languages)]
@@ -181,11 +182,12 @@ def filter_on_project_loc_size(languages, size_classes_to_keep, repository):
         return False
 
 
-def apply_filters_log_filtering(repo_list, repository_filters_explanation, log_filename):
+def apply_filters_log_filtering(repo_list, repository_filters_explanation, log_filename, filters_base_path="."):
     """Given a list of repositories, we filter (with logging) based on the set of filters supplied.
     Result will be a list of the list of projects that were left after each filter step"""
-    Path("./.FILTERDATA").mkdir(parents=True, exist_ok=True)
-    os.chdir("./.FILTERDATA")
+    base_path = Path.absolute(filters_base_path).join("/.FILTERDATA")
+    base_path.mkdir(parents=True, exist_ok=True)
+    os.chdir(base_path)
     acc = []
     repos = repo_list
     with open(log_filename, "w") as xml_log:
@@ -198,10 +200,9 @@ def apply_filters_log_filtering(repo_list, repository_filters_explanation, log_f
             filter_function, explanation_text = f_head
             print(f"Filtering with filter: {explanation_text}\n")
             filtered_repositories = [r for r in repos if filter_function(r)]
-            filtered_repositories_names = [r.full_name for r in filtered_repositories]
             xml_log.write(f'\t<Filter note="{explanation_text}" amount="{len(filtered_repositories)}">\n')
-            for name in filtered_repositories_names:
-                xml_log.write(f'\t\t<Repository name="{name}" />\n')
+            for r in filtered_repositories:
+                xml_log.write(f'\t\t<Repository name="{r.full_name}" url="{r.clone_url}" />\n')
             xml_log.write(f'\t</Filter>\n')
             acc.append(filtered_repositories)
             repos = filtered_repositories
@@ -223,7 +224,7 @@ def get_final_projects_absolute_paths(filter_file):
     return last_filter_node
 
 
-def eval_example(github_user):
+def eval_example(github_user, working_directory=os.getcwd()):
     repos = get_projects_from_user(PY_GIT, github_user)
     if not repos:
         LOG.debug("No repositories returned from user: " + github_user)
@@ -282,5 +283,6 @@ def make_clone_script():
 
 if __name__ == "__main__":
     # make_clone_script()
-    eval_example("Ericsson")
-    eval_example("Google")
+    eval_example("Ericsson", "../Case_Studies")
+    eval_example("Google", "../Case_Studies")
+    eval_example("Microsoft", "../Case_Studies")
