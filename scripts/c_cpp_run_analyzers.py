@@ -127,6 +127,7 @@ if __name__ == "__main__":
                         required=False, default=False)
 
     args = parser.parse_args()
+    ON_TESTCODE_ONLY = args.analyse_only_tests
     os.chdir(args.projpath)
     # Run tools on all projects
     # 1) Loop through all directories in current working directory

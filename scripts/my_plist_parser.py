@@ -35,8 +35,6 @@ def is_duplicate(w1: Report, w2: Report, col_distance=0, row_distance=0) -> Dupl
             return DuplicateRelations.POTENTIAL_DUPLICATE
 
 
-
-
 def prettify(dir_name):
     _dir = os.path.basename(dir_name)
     if _dir.startswith("codechecker_ctu"):

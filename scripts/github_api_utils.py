@@ -1,6 +1,5 @@
 import logging
 import subprocess
-
 from pathlib import Path
 from github import Github
 import os
@@ -108,7 +107,8 @@ def get_projects_from_user(py_git, username):
 # 1) language (general)
 # 2) Language + size (test)
 # Note: Github's API gives size value in bytes, this is ~1MB of code in C/C++, Java or Python
-min_size_in_bytes = 1 * 1000 * 1000
+bytes_to_megabytes = 1048576
+min_size_in_bytes = 1 * bytes_to_megabytes
 general_lang_sizes = [("C++", min_size_in_bytes),
                       ("C", min_size_in_bytes),
                       ("Java", min_size_in_bytes),
@@ -157,7 +157,7 @@ def filter_on_testware_language(languages, repository):
     return False
 
 
-def filter_on_project_loc_size(languages, size_classes_to_keep, repository):
+def filter_on_project_language_loc_size(languages, size_classes_to_keep, repository):
     """Filtering based on LoC"""
     """Based on
     https://stackoverflow.com/questions/26881441/can-you-get-the-number-of-lines-of-code-from-a-github-repository
@@ -178,6 +178,29 @@ def filter_on_project_loc_size(languages, size_classes_to_keep, repository):
         for s in size_classes_to_keep:
             if s in repo_size_classes:
                 return True
+    else:
+        return False
+
+
+def filter_on_project_loc_size(languages, size_classes_to_keep, repository):
+    """Filtering based on LoC"""
+    """Based on
+    https://stackoverflow.com/questions/26881441/can-you-get-the-number-of-lines-of-code-from-a-github-repository
+    the simplest way seems to be to shallow clone it, run e.g. cloc and then parse results"""
+    cmd = ["git", "clone"]
+    if repository.default_branch == 'main':
+        cmd.extend(["--depth", "1"])
+    else:
+        LOG.debug(f"Potential issue: following repository does not default to main - {repository}. Pulling everything ...")
+    cmd.extend([repository.clone_url, repository.full_name])
+    #if res.returncode == 128:
+        # Return code for "destination already exists"
+    #    return True  # We assume this has already been filtered once
+    cloc = cloc_invocation(languages, repository.full_name)
+    if cloc:
+        total_size_class = cloc.classify_total_size()
+        if total_size_class in size_classes_to_keep:
+            return True
     else:
         return False
 
@@ -235,18 +258,27 @@ def eval_example(github_user, working_directory=os.getcwd()):
                 log.write(name + "\n")
 
     # Partial applications of filter configuration on filter functions
-    # Should return a function for which the remaining argument is the repository object from pygit
-    filters = [(partial(filter_on_languages, general_lang_sizes),
-                "Filtering based on overall code size using >=~1MB of code in C/C++, Java or Python"),
-               (partial(filter_on_activity, max_time_since_update),
-                "Filtering based on time since last activity: <= " + str(max_time_since_update) + " days"),
-               (partial(filter_on_project_loc_size, ["C", "C++", 'C/C++ Header', "Python", "Java"],
-                        [ProjectSize.Medium, ProjectSize.Large]),
-                "Filtering based on LoC count overall (>10000 LoC in any of the languages listed)"),
-               (
-               partial(filter_on_testware_language, ["C", "C++", "Python", "Java"]),
-               "Filtering based on Testware LoC (>1000 Lines of tests)")]
-    filtered_projects = apply_filters_log_filtering(repos, filters, github_user + "_FilteredProjects.xml")
+    # Any filter should return a partial function for which the remaining argument
+    # is a PyGithub Repository object and returns bool
+
+    language_size_in_byte_filter = (partial(filter_on_languages, general_lang_sizes),
+                             "Filtering based on overall code size using >=~1MB of code in C/C++, Java or Python")
+
+    recently_active_filter = (partial(filter_on_activity, max_time_since_update),
+                              "Filtering based on time since last activity: <= " + str(max_time_since_update) + " days")
+
+    project_total_size_filter = (partial(filter_on_project_loc_size, ["C", "C++", 'C/C++ Header', "Python", "Java"],
+                                [ProjectSize.Medium]), "Filtering based on LoC count overall (50000 <= LoC" +
+                                               " < 100000 when summing all C/C++/Java/Python code)")
+    testware_min_size_filter = (partial(filter_on_testware_language, ["C", "C++", "Python", "Java"]),
+                                "Filtering based on Testware LoC (>1000 Lines of tests, >1-2% of total size)")
+    filters = [language_size_in_byte_filter,
+               recently_active_filter,
+               project_total_size_filter,
+
+               ]
+    current_time = datetime.now().strftime("%Y_%m_%d__%H_%M_%S")
+    filtered_projects = apply_filters_log_filtering(repos, filters, github_user + f"_FilteredProjects_{current_time}.xml")
 
 
 def make_clone_script():
@@ -283,6 +315,5 @@ def make_clone_script():
 
 if __name__ == "__main__":
     # make_clone_script()
-    eval_example("Ericsson", "../Case_Studies")
-    eval_example("Google", "../Case_Studies")
-    eval_example("Microsoft", "../Case_Studies")
+    # eval_example("Ericsson")
+    eval_example("Google")

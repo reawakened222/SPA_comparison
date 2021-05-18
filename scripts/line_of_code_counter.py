@@ -18,13 +18,27 @@ class ProjectSize(IntEnum):
     Medium = 2,
     Large = 3
 
+    @staticmethod
+    def get_size_from_loc_count(loc_count):
+        if loc_count <= 1000:
+            return ProjectSize.Tiny
+        elif loc_count <= 50000:
+            return ProjectSize.Small
+        elif loc_count <= 100000:
+            return ProjectSize.Medium
+        else:
+            return ProjectSize.Large
+
+
 
 class ClocData:
     project_path = ""
     lang_data = dict()
+    total_code_size = -1
 
-    def __init__(self, lang_data_dict, path):
+    def __init__(self, lang_data_dict, size, path):
         self.lang_data = lang_data_dict
+        self.total_code_size = size
         self.project_path = path
 
     def __getitem__(self, item):
@@ -36,6 +50,7 @@ class ClocData:
     def make_from_string(cloc_output, run_path):
         if 'language' not in cloc_output:
             return None
+        size = 0
         root = ET.fromstring(cloc_output)
         langs = root.find("languages")
         if not langs:
@@ -47,32 +62,30 @@ class ClocData:
                 LangData = namedtuple("LangData", ["files", "blank", "commented", "code"])
                 lang_data_dict[attr["name"]] = LangData(int(attr["files_count"]), int(attr["blank"]),
                                                         int(attr["comment"]), int(attr["code"]))
-
-        return ClocData(lang_data_dict, run_path)
+                size += int(attr["code"])
+        return ClocData(lang_data_dict, size, run_path)
 
     def classify(self, language="C++"):
         """Return Small, Medium, or large-scale based on #LoC for language of interest"""
         # Small = <10k LoC
         # Medium <100k LoC
         # Large >=100k LoC
-        result = ProjectSize.Tiny
         size = self.lang_data.get(language)
         if not size:
             return None
         else:
-            if size.code < 10000:
-                result = ProjectSize.Small if result < ProjectSize.Small else result
-            elif size.code < 100000:
-                result = ProjectSize.Medium if result < ProjectSize.Medium else result
-            else:
-                result = ProjectSize.Large
-        return result
+            return ProjectSize.get_size_from_loc_count(size.code)
+
 
     def get_project_sizes_sorted(self, languages):
         """Get a list of language, size class pairs, sorted in descending order"""
         sizes = [(l, self.classify(l)) for l in languages if self.classify(l)]
         sizes.sort(key=lambda e: e[1], reverse=True)
         return sizes
+
+
+    def classify_total_size(self):
+        return ProjectSize.get_size_from_loc_count(self.total_code_size)
 
 
 def cloc_invocation(languages, top_folder=".", perl_dir_filter=""):
