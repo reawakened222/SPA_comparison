@@ -128,7 +128,6 @@ def run_fbinfer_on_target(resultdir, targetdir):
         subprocess.run(["mkdir", "-p", "cmakebuild_compilecommand"])
         os.chdir("cmakebuild_compilecommand")
         subprocess.run(["spacomp_cmake", ".."])
-        # filter_compile_command("compile_commands.json", "testware_compilecommands.json")
         os.chdir("..")
         infer_invocation_command = ["infer", "run", "--compilation-database",
                                     "cmakebuild_compilecommand/compile_commands.json"]

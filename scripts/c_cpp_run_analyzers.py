@@ -15,10 +15,12 @@ LOG = logging.getLogger("C_CPP")
 
 ON_TESTCODE_ONLY = False
 
-def filter_compile_command(compile_command_path, filtered_commands_path="compile_commands_filtered.json"):
+
+def filter_compile_command(compile_command_path, filter_function=is_testware_translation_unit,
+                           filtered_commands_path="compile_commands_filtered.json"):
     with open(compile_command_path, "r") as data:
         compile_commands = json.load(data)
-        compile_commands_filtered = list(filter(is_testware_translation_unit, compile_commands))
+        compile_commands_filtered = [comp for comp in compile_commands if filter_function(comp)]
         with open(filtered_commands_path, "w+") as outfile:
             outfile.write(json.dumps(compile_commands_filtered))
 
@@ -86,11 +88,9 @@ def run_codechecker_on_compile_command(outdirpath, compile_command_database_path
 def run_tools_on_compilecommand(compcommand_path, runners_and_ctuflag_pair, project_name, on_testware_only=True):
     """Given a list of (possibly CTU-based) tools, run all tools on @compcommand_path"""
     # Do filtering of compile command to only include testware
-    print(compcommand_path)
     compcom_dirpath, compcomname = os.path.split(compcommand_path)
     new_compile_command_file = f"{compcom_dirpath}/testware_{compcomname}"
-    print(f"p: {compcommand_path}\nnew_compile_command_file: {new_compile_command_file}\n")
-    filter_compile_command(compcommand_path, new_compile_command_file)
+    filter_compile_command(compcommand_path, is_testware_translation_unit, new_compile_command_file)
 
     for runner, is_ctu in runners_and_ctuflag_pair:
         # Check if it's a CTU analysis, 
@@ -113,7 +113,7 @@ def run_analyzers_on_project(proj_path):
         for logs in run_commands:
             run_tools_on_compilecommand(logs, [(run_codechecker_on_compile_command, False),
                                                (run_codechecker_on_compile_command, True),
-                                               (run_cppcheck_on_compilecommand, False)], project_name)
+                                               (run_cppcheck_on_compilecommand, False)], project_name, ON_TESTCODE_ONLY)
     else:
         print(f"No build commands found by runner script for project {proj_path}.")
 

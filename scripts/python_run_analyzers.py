@@ -1,6 +1,8 @@
 import glob
 import logging
 import os
+import pathlib
+import subprocess
 import sys
 import json
 import argparse
@@ -14,6 +16,8 @@ logging.basicConfig(filename='PYTHON.log', filemode='w', format='%(asctime)s %(m
 LOG = logging.getLogger("PYTHON")
 
 ON_TESTCODE_ONLY = False
+PYTHON_VENV_BASE_NAME = "venv"
+
 
 def filter_compile_command(compile_command_path, filtered_commands_path="compile_commands_filtered.json"):
     with open(compile_command_path, "r") as data:
@@ -23,99 +27,43 @@ def filter_compile_command(compile_command_path, filtered_commands_path="compile
             outfile.write(json.dumps(compile_commands_filtered))
 
 
-def generate_analysis_output_folderpath(base_path, tool_name):
-    now = datetime.now()
-    analysis_starttime = now.strftime("%Y_%m_%d_%H_%M_%S")
-    analysis_output = f"{base_path}/{tool_name}_results_{analysis_starttime}"
-    return analysis_output
 
 
-def analysis_postprocess(result_folder, tool_name, project_name):
-    """For tools that need to do post-processing on results before submitting to the framework"""
 
-    def first_to_upper(word):
-        return str(word[0].upper()) + word[1:]
-
-    LOG.info(first_to_upper(tool_name) + " run completed on " + project_name)
-    converted_result_folder = os.path.join(result_folder, tool_name + "_results_converted")
-    return convert_and_store_to_codechecker(result_folder, converted_result_folder, tool_name, project_name)
-
-
-def run_cppcheck_on_compilecommand(outdirpath, compile_command_database_path, isctu, project_name):
-    result_folder = generate_analysis_output_folderpath(outdirpath, "cppcheck")
-    # Since CppCheck does not create output folders automatically, we must make sure it exists
-    subprocess.call(["mkdir", "-p", result_folder])
-    retcode = subprocess.call(["cppcheck", "--enable=all", "--inconclusive",
-                               f"--project={compile_command_database_path}",  # compile commands to use
-                               f"--plist-output={result_folder}"])  # output folder
+def run_pylama_on_project(outdirpath, project_path, project_name):
+    result_folder = generate_analysis_output_folderpath(outdirpath, "pylama")
+    pylama_invocation = ["pylama", "--format", "pylint",
+                         "--force", "--report", f"{result_folder}/pylama_results"
+                                                "--abspath", project_path]
+    retcode = subprocess.call(pylama_invocation)  # output folder
     if retcode == 0:
-        analysis_postprocess(result_folder, "cppcheck", project_name)
+        # We use pylint output format, which framework can already parse
+        analysis_postprocess(result_folder, "pylint", project_name)
 
 
-def run_infer_on_compilecommand(outdirpath, compile_command_database_path, project_name):
-    result_folder = generate_analysis_output_folderpath(outdirpath, "infer")
+def run_pyre_on_project(outdir_path, project_path, project_name):
+    result_folder = generate_analysis_output_folderpath(outdir_path, "pyre")
+    pyre_invocation = ["pyre", "--source-directory", project_path]
+    venv_dir = glob.glob(f"**/{PYTHON_VENV_BASE_NAME}", recursive=True)
+    # Include local virtual environment for module includes
+    if venv_dir and len(venv_dir) == 1:
+        pyre_invocation.extend(["--search-path", pathlib.Path(venv_dir[0]).absolute()])
+    pyre_invocation.extend(["--output", "json", "--noninteractive", "check"])
+    retcode = subprocess.call(pyre_invocation, capture_output=True)
 
-    retcode = subprocess.call(["infer", "run",
-                               "-o", result_folder,  # output folder
-                               "--compilation-database", compile_command_database_path])
     if retcode == 0:
-        analysis_postprocess(result_folder, "infer", project_name)
+        analysis_postprocess(result_folder, "pyre", project_name)
 
-
-def run_codechecker_on_compile_command(outdirpath, compile_command_database_path, isctu, project_name):
-    result_folder_suffix = "_ctu" if isctu else ""
-    result_folder = generate_analysis_output_folderpath(outdirpath, f"codechecker{result_folder_suffix}")
-    codechecker_command = [CODECHECKER_MAINSCRIPT_PATH, "analyze", "-o", result_folder]
-
-    # If we've defined a skipfile to use
-    if CODECHECKER_SKIPFILE_PATH:
-        codechecker_command.extend(["-i", CODECHECKER_SKIPFILE_PATH])
-    if isctu:
-        codechecker_command.append("--ctu-all")
-    codechecker_command.append(compile_command_database_path)
-    retcode = subprocess.call(codechecker_command)
-    if retcode == 0:
-        print("CodeChecker run completed\n")
-        if isctu:
-            print("Ran in CTU mode\n")
-        store_to_codechecker(result_folder, project_name)
     else:
-        logging.debug("Unable to run the following CodeChecker command: " + str(codechecker_command))
-
-
-def run_tools_on_compilecommand(compcommand_path, runners_and_ctuflag_pair, project_name, on_testware_only=True):
-    """Given a list of (possibly CTU-based) tools, run all tools on @compcommand_path"""
-    # Do filtering of compile command to only include testware
-    print(compcommand_path)
-    compcom_dirpath, compcomname = os.path.split(compcommand_path)
-    new_compile_command_file = f"{compcom_dirpath}/testware_{compcomname}"
-    print(f"p: {compcommand_path}\nnew_compile_command_file: {new_compile_command_file}\n")
-    filter_compile_command(compcommand_path, new_compile_command_file)
-
-    for runner, is_ctu in runners_and_ctuflag_pair:
-        # Check if it's a CTU analysis,
-        # if so we should include all the build files for the AST generation step
-        # Otherwise, run it with the filtered one
-        command_file_to_use = compcommand_path if (is_ctu or not on_testware_only) else new_compile_command_file
-        runner(compcom_dirpath, command_file_to_use, is_ctu, project_name)
+        LOG.error("Pyre had an error for project " + project_name)
+        LOG.error(str(retcode.stderr))
 
 
 # Assumes that there is a file with compile commands somewhere in the project
 def run_analyzers_on_project(proj_path):
     project_name = os.path.basename(proj_path)
-    autogenerated_build_commands = glob.glob(f"{proj_path}/**/compile_commands.json", recursive=True)
-    logged_build_commands = glob.glob(f"{proj_path}/**/com.json", recursive=True)
-
-    # prefer the manually generated compile command file to the one autogenerated by e.g. CMake
-    # Reasonably, if both exist, something was lacking in the first one
-    run_commands = logged_build_commands if logged_build_commands else autogenerated_build_commands
-    if run_commands:
-        for logs in run_commands:
-            run_tools_on_compilecommand(logs, [(run_codechecker_on_compile_command, False),
-                                               (run_codechecker_on_compile_command, True),
-                                               (run_cppcheck_on_compilecommand, False)], project_name)
-    else:
-        print(f"No build commands found by runner script for project {proj_path}.")
+    run_pylama_on_project(proj_path, proj_path, project_name)
+    run_pyre_on_project(proj_path, proj_path, project_name)
 
 
 if __name__ == "__main__":

@@ -24,3 +24,19 @@ def convert_and_store_to_codechecker(analysis_outputpath, codechecker_outputpath
     if res.returncode != 0:
         return False
     return store_to_codechecker(codechecker_outputpath, f'"{project_name}_{analyzer}{store_name_suffix}"')
+
+
+def analysis_postprocess(result_folder, tool_name, project_name):
+    """For tools that need to do post-processing on results before submitting to the framework"""
+
+    converted_result_folder = os.path.join(result_folder, tool_name + "_results_converted")
+    return convert_and_store_to_codechecker(result_folder, converted_result_folder, tool_name, project_name)
+
+
+def generate_analysis_output_folderpath(base_path, tool_name, generate_folder=True):
+    now = datetime.now()
+    analysis_starttime = now.strftime("%Y_%m_%d_%H_%M_%S")
+    analysis_output = f"{base_path}/{tool_name}_results_{analysis_starttime}"
+    if generate_folder:
+        subprocess.call(["mkdir", "-p", analysis_output])
+    return analysis_output
