@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+from datetime import datetime
 HOME = os.environ["HOME"]
 
 CODECHECKER_PATH = f"{HOME}/codechecker"
@@ -26,7 +27,7 @@ def convert_and_store_to_codechecker(analysis_outputpath, codechecker_outputpath
     return store_to_codechecker(codechecker_outputpath, f'"{project_name}_{analyzer}{store_name_suffix}"')
 
 
-def analysis_postprocess(result_folder, tool_name, project_name):
+def analysis_post_process(result_folder, tool_name, project_name):
     """For tools that need to do post-processing on results before submitting to the framework"""
 
     converted_result_folder = os.path.join(result_folder, tool_name + "_results_converted")

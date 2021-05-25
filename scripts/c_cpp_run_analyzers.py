@@ -1,19 +1,52 @@
+#!/bin/python3
 import glob
 import logging
-import os
+import pathlib
 import sys
 import json
 import argparse
 from datetime import datetime
+from dotenv import load_dotenv
 
 # sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from codechecker_interface import *
 from testware_functions import *
+SCRIPT_PATH = pathlib.Path(__file__).parent.absolute()
+load_dotenv(f"{SCRIPT_PATH}/.env")
+USER = os.getenv("HOME")
+CPPCHECK_INSTALL_PATH = os.getenv("CPPCHECK_PATH")
+INFER_INSTALL_PATH = os.getenv("INFER_PATH")
 
 logging.basicConfig(filename='C_CPP.log', filemode='w', format='%(asctime)s %(message)s')
 LOG = logging.getLogger("C_CPP")
 
-ON_TESTCODE_ONLY = False
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
+parser = argparse.ArgumentParser(description='Run analysers')
+parser.add_argument('--path', '-p', help='Path to run script on')
+parser.add_argument('--recursive', '-r', help='run script on all folders in path',
+                    type=str2bool, required=False, default=False)
+parser.add_argument('--project-name', '-out',
+                    help='If set, this is the base name used to store the runs in the framework',
+                    required=False, default='')
+parser.add_argument('--tools', '-t', help='A semicolon-separated list of the following analysis tools to run: ' +
+                                          '{all, codechecker, codechecker_ctu, cppcheck, infer}',
+                    required=False, default='all')
+parser.add_argument('--only-tests', '-at', help='Whether analysis should only be run on tests',
+                    type=str2bool, required=False, default=False)
+parser.add_argument('--no-upload',
+                    help='Set to true if you do not want to upload to framework (e.g. debugging of toolchain)',
+                    type=str2bool, required=False, default=False)
 
 
 def filter_compile_command(compile_command_path, filter_function=is_testware_translation_unit,
@@ -25,67 +58,49 @@ def filter_compile_command(compile_command_path, filter_function=is_testware_tra
             outfile.write(json.dumps(compile_commands_filtered))
 
 
-def generate_analysis_output_folderpath(base_path, tool_name):
-    now = datetime.now()
-    analysis_starttime = now.strftime("%Y_%m_%d_%H_%M_%S")
-    analysis_output = f"{base_path}/{tool_name}_results_{analysis_starttime}"
-    return analysis_output
-
-
-def analysis_postprocess(result_folder, tool_name, project_name):
-    """For tools that need to do post-processing on results before submitting to the framework"""
-
-    def first_to_upper(word):
-        return str(word[0].upper()) + word[1:]
-
-    LOG.info(first_to_upper(tool_name) + " run completed on " + project_name)
-    converted_result_folder = os.path.join(result_folder, tool_name + "_results_converted")
-    return convert_and_store_to_codechecker(result_folder, converted_result_folder, tool_name, project_name)
-
-
-def run_cppcheck_on_compilecommand(outdirpath, compile_command_database_path, isctu, project_name):
+def run_cppcheck_on_compile_command(outdirpath, compile_command_database_path, project_name, is_ctu):
     result_folder = generate_analysis_output_folderpath(outdirpath, "cppcheck")
     # Since CppCheck does not create output folders automatically, we must make sure it exists
     subprocess.call(["mkdir", "-p", result_folder])
-    retcode = subprocess.call(["cppcheck", "--enable=all", "--inconclusive",
+    return_code = subprocess.call([f"{CPPCHECK_INSTALL_PATH}/cppcheck", "--enable=all", "--inconclusive",
                                f"--project={compile_command_database_path}",  # compile commands to use
                                f"--plist-output={result_folder}"])  # output folder
-    if retcode == 0:
-        analysis_postprocess(result_folder, "cppcheck", project_name)
+    if return_code == 0:
+        analysis_post_process(result_folder, "cppcheck", project_name)
 
 
-def run_infer_on_compilecommand(outdirpath, compile_command_database_path, project_name):
+def run_infer_on_compile_command(outdirpath, compile_command_database_path, project_name, is_ctu):
     result_folder = generate_analysis_output_folderpath(outdirpath, "infer")
 
-    retcode = subprocess.call(["infer", "run",
+    return_code = subprocess.call([f"{INFER_INSTALL_PATH}/infer", "run",
                                "-o", result_folder,  # output folder
                                "--compilation-database", compile_command_database_path])
-    if retcode == 0:
-        analysis_postprocess(result_folder, "infer", project_name)
+    if return_code == 0:
+        analysis_post_process(result_folder, "fbinfer", project_name)
 
 
-def run_codechecker_on_compile_command(outdirpath, compile_command_database_path, isctu, project_name):
-    result_folder_suffix = "_ctu" if isctu else ""
+def run_codechecker_on_compile_command(outdirpath, compile_command_database_path, project_name, is_ctu):
+    result_folder_suffix = "_ctu" if is_ctu else ""
     result_folder = generate_analysis_output_folderpath(outdirpath, f"codechecker{result_folder_suffix}")
     codechecker_command = [CODECHECKER_MAINSCRIPT_PATH, "analyze", "-o", result_folder]
 
     # If we've defined a skipfile to use
     if CODECHECKER_SKIPFILE_PATH:
         codechecker_command.extend(["-i", CODECHECKER_SKIPFILE_PATH])
-    if isctu:
+    if is_ctu:
         codechecker_command.append("--ctu-all")
     codechecker_command.append(compile_command_database_path)
-    retcode = subprocess.call(codechecker_command)
-    if retcode == 0:
+    return_code = subprocess.call(codechecker_command)
+    if return_code == 0:
         print("CodeChecker run completed\n")
-        if isctu:
+        if is_ctu:
             print("Ran in CTU mode\n")
         store_to_codechecker(result_folder, project_name)
     else:
         logging.debug("Unable to run the following CodeChecker command: " + str(codechecker_command))
 
 
-def run_tools_on_compilecommand(compcommand_path, runners_and_ctuflag_pair, project_name, on_testware_only=True):
+def run_tools_on_compile_command(compcommand_path, runners_and_ctuflag_pair, project_name, on_testware_only=True):
     """Given a list of (possibly CTU-based) tools, run all tools on @compcommand_path"""
     # Do filtering of compile command to only include testware
     compcom_dirpath, compcomname = os.path.split(compcommand_path)
@@ -97,45 +112,60 @@ def run_tools_on_compilecommand(compcommand_path, runners_and_ctuflag_pair, proj
         # if so we should include all the build files for the AST generation step
         # Otherwise, run it with the filtered one
         command_file_to_use = compcommand_path if (is_ctu or not on_testware_only) else new_compile_command_file
-        runner(compcom_dirpath, command_file_to_use, is_ctu, project_name)
+        runner(compcom_dirpath, command_file_to_use, project_name, is_ctu)
+
+
+analyzer_mapping = {
+    'codechecker': (run_codechecker_on_compile_command, False),
+    'codechecker_ctu': (run_codechecker_on_compile_command, True),
+    'cppcheck': (run_cppcheck_on_compile_command, False),
+    'infer': (run_infer_on_compile_command, False)
+}
+
+
+def get_all_c_cpp_analyzers():
+    return [analyzer for name, analyzer in analyzer_mapping.items()]
+
+
+def get_analyzers_to_run(analyzer_string_list):
+    def analyze_map(analyzer):
+        return analyzer_mapping.get(analyzer, None)
+
+    # Figure out from the passed list of strings what tools we want to run
+    res_list = []
+    if not analyzer_string_list or analyzer_string_list[0] == "all":
+        return get_all_c_cpp_analyzers()
+    else:
+        res_list = analyzer_string_list
+    return [analyze_map(f) for f in res_list]
 
 
 # Assumes that there is a file with compile commands somewhere in the project
-def run_analyzers_on_project(proj_path):
-    project_name = os.path.basename(proj_path)
-    autogenerated_build_commands = glob.glob(f"{proj_path}/**/compile_commands.json", recursive=True)
-    logged_build_commands = glob.glob(f"{proj_path}/**/com.json", recursive=True)
+def run_analyzers_on_project(proj_path, analyzers_to_run):
+    # If script user has set specific project name, override the one grabbed from path
+    project_name = args.project_name if bool(args.project_name) else os.path.basename(proj_path)
 
     # prefer the manually generated compile command file to the one autogenerated by e.g. CMake
     # Reasonably, if both exist, something was lacking in the first one
+    autogenerated_build_commands = glob.glob(f"{proj_path}/**/compile_commands.json", recursive=True)
+    logged_build_commands = glob.glob(f"{proj_path}/**/com.json", recursive=True)
     run_commands = logged_build_commands if logged_build_commands else autogenerated_build_commands
+
     if run_commands:
         for logs in run_commands:
-            run_tools_on_compilecommand(logs, [(run_codechecker_on_compile_command, False),
-                                               (run_codechecker_on_compile_command, True),
-                                               (run_cppcheck_on_compilecommand, False)], project_name, ON_TESTCODE_ONLY)
+            run_tools_on_compile_command(logs, analyzers_to_run, project_name, args.only_tests)
     else:
         print(f"No build commands found by runner script for project {proj_path}.")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Run analysers')
-    parser.add_argument('--projpath', '-p', help='Project to run script on')
-    parser.add_argument('--single-project', '-sp', help='run toolchain in single project mode', required=False,
-                        default=True)
-    parser.add_argument('--analyse-only-tests', '-at', help='Whether analysis should only be run on tests',
-                        required=False, default=False)
-
     args = parser.parse_args()
-    ON_TESTCODE_ONLY = args.analyse_only_tests
-    os.chdir(args.projpath)
-    # Run tools on all projects
-    # 1) Loop through all directories in current working directory
-    # 2) get their basename, will be needed for CodeChecker storing later
-    # 3) invoke run_* on project
-    if args.single_project:
-        run_analyzers_on_project(os.path.abspath(args.projpath))
-    else:
-        dirs = next(os.walk(args.projpath))[1]
-        for d in dirs:
-            run_analyzers_on_project(os.path.abspath(d))
+    os.chdir(args.path)
+    tools_list = args.tools.split(";")
+    tools = [t for t in get_analyzers_to_run(tools_list) if t is not None]
+    dirs = [args.path]
+    if args.recursive:
+        dirs = [os.path.abspath(d) for d in next(os.walk(args.path))[1]]
+    for d in dirs:
+        print("Running analyzers on " + d)
+        run_analyzers_on_project(d, tools)
