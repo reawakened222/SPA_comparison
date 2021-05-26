@@ -10,7 +10,7 @@ class CppCheck(Analyzer):
     def __init__(self):
         super().__init__("cppcheck", False, True, ["C", "C++"])
 
-    def get_analysis_commands(self, output_dir, project_name):
+    def gen_analysis_commands(self, project_dir, project_name):
         """Method for getting a general analysis command, e.g. when running it on a target folder"""
         raise NotImplemented
 

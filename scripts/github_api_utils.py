@@ -88,7 +88,7 @@ def git_is_directory_name_substring_in_repo(py_git, repo_name, folder_name, recu
 
     # for now, will hack in a check for CMake here, to reduce API calls
     # TODO: Extend to determine additional build systems
-    return is_list_empty(dirs_matching_search), is_list_empty(git_is_cmake_project(py_git, root_contents))
+    return is_list_empty(dirs_matching_search), git_is_cmake_project(py_git, root_contents)
     # return isListEmpty(dirs_matching_search)
 
 
@@ -159,9 +159,6 @@ def filter_on_testware_language(languages, repository):
 
 def filter_on_project_language_loc_size(languages, size_classes_to_keep, repository):
     """Filtering based on LoC"""
-    """Based on
-    https://stackoverflow.com/questions/26881441/can-you-get-the-number-of-lines-of-code-from-a-github-repository
-    the simplest way seems to be to shallow clone it, run e.g. cloc and then parse results"""
     cmd = ["git", "clone"]
     if repository.default_branch == 'main':
         cmd.extend(["--depth", "1"])

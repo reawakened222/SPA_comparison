@@ -1,49 +1,62 @@
+import logging
 import os
+import pathlib
 import shutil
 from codechecker_interface import gen_convert_to_codechecker_command
 from analyzer_parent import Analyzer
+from build_system_handler import *
+import subprocess
 
 INFER_PATH = os.getenv("INFER_PATH", shutil.which("infer"))
-
+logging.basicConfig("INFER.log", level=logging.DEBUG)
+LOG = logging.getLogger("FB_INFER")
 
 class FBInfer(Analyzer):
     def __init__(self):
         super().__init__("fbinfer", False, True, ["C", "C++", "Java"])
 
-    def get_analysis_commands(self, output_dir, project_name):
-        # TODO: REFACTOR!
-        def run_fbinfer_on_target(resultdir, targetdir):
-            build_system = determine_build_system(targetdir)
-            infer_invocation_command = [f"{INFER_INSTALL_PATH}/infer", "run", "--"]
-            os.chdir(os.path.join(targetdir))
+    def gen_analysis_commands(self, project_dir, project_name):
+        def fbinfer_command_on_dir(resultdir, targetdir):
             LOG.info(f"FB Infer running on {targetdir}")
+            build_system = determine_build_system(targetdir)
             if build_system == BuildSystem.UNSUPPORTED:
-                LOG.warning("No supported build system found to build ")
-            elif build_system == BuildSystem.Ant:
-                LOG.info("SPACOMP_LOG: INFER ANT BUILD ON " + targetdir)
-                infer_invocation_command.extend(["ant", "test"])
-            elif build_system == BuildSystem.Bazel:
-                infer_invocation_command.extend(["bazel", "test"])
-            elif build_system == BuildSystem.CMake:
-                print("SPACOMP_LOG: INFER CMAKE BUILD ON " + targetdir)
-                subprocess.run(["mkdir", "-p", "cmakebuild_compilecommand"])
-                os.chdir("cmakebuild_compilecommand")
-                subprocess.run(["spacomp_cmake", ".."])
-                os.chdir("..")
-                infer_invocation_command = ["infer", "run", "--compilation-database",
-                                            "cmakebuild_compilecommand/compile_commands.json"]
-            elif build_system == BuildSystem.Gradle:
-                print("SPACOMP_LOG: INFER GRADLE BUILD ON " + targetdir)
-                infer_invocation_command.extend(["./gradlew", "test"])
-            elif build_system == BuildSystem.Maven:
-                LOG.info("SPACOMP_LOG: INFER MAVEN BUILD ON " + targetdir)
-                infer_invocation_command.extend(["mvn", "test"])
-            return infer_invocation_command, resultdir
+                LOG.warning("No supported build system found to build " + targetdir)
+                return []
+
+            infer_invocation_command = [INFER_PATH, "run", "--results-dir", resultdir]
+            LOG.info(f"Infer detected {build_system} build")
+            if build_system == BuildSystem.CMake:
+                cmake_build_dir = pathlib.Path(targetdir).joinpath(f"./{CMAKE_BUILD_DIRECTORY_NAME}").absolute()
+                # Check if cmake has been run before
+                if not cmake_build_dir.exists() or \
+                    pathlib.Path(cmake_build_dir).joinpath(CMAKE_COMPILE_COMMAND_DEFAULT):
+                    LOG.debug("CMake folder or compilation database not found, rerunning basic cmake config")
+                    subprocess.run(["mkdir", "-p", cmake_build_dir])
+                    os.chdir(cmake_build_dir)
+                    cmake_result = subprocess.run(["cmake", "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON", ".."])
+                    if cmake_result.returncode != 0:
+                        LOG.error("Something went wrong during CMake run. Skipping Infer invocation ...")
+                        return []
+                    os.chdir("..")
+                return [["infer", "run", "--compilation-database",
+                         f"{cmake_build_dir}/{CMAKE_COMPILE_COMMAND_DEFAULT}"]]
+            else:
+                # We need to use capture mode
+                infer_invocation_command.append("--")
+                if build_system == BuildSystem.Ant:
+                    infer_invocation_command.extend(["ant", "test"])
+                elif build_system == BuildSystem.Bazel:
+                    infer_invocation_command.extend(["bazel", "test"])
+                elif build_system == BuildSystem.Gradle:
+                    infer_invocation_command.extend(["./gradlew", "test"])
+                elif build_system == BuildSystem.Maven:
+                    infer_invocation_command.extend(["mvn", "test"])
+                return [infer_invocation_command]
         result_folder = self.get_analysis_output_folderpath(project_dir)
+        return fbinfer_command_on_dir(result_folder, project_dir)
 
     def gen_analysis_commands_from_compile_commands_file(self, project_dir, project_name, compile_command_database):
         result_folder = self.get_analysis_output_folderpath(project_dir)
-        # Since CppCheck does not create output folders automatically, we must make sure it exists
         return [[INFER_PATH, "run",
                "-o", result_folder,  # output folder
                "--compilation-database", compile_command_database]
