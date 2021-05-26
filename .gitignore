@@ -9,5 +9,6 @@ target/*
 .idea*
 .*
 __*
+!__init__.py
 codechecker_common
 codechecker_report_hash
