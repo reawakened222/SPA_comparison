@@ -1,4 +1,5 @@
 #! /bin/python3
+import os.path
 import shutil
 import logging
 import pathlib
@@ -7,7 +8,7 @@ import sys
 import json
 import argparse
 from datetime import datetime
-import analyzers
+from analyzers.fbinfer import INFER_UNSUPPORTED_FLAGS
 
 # sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from analyzers.cppcheck import CppCheck
@@ -61,6 +62,8 @@ def make_filtered_compile_command(compile_command_path, filter_function=is_testw
             outfile.write(json.dumps(compile_commands_filtered))
 
 
+
+
 def run_cppcheck_on_compile_command(outdirpath, compile_command_database_path, project_name, is_ctu):
     result_folder = generate_analysis_output_folderpath(outdirpath, "cppcheck")
     # Since CppCheck does not create output folders automatically, we must make sure it exists
@@ -75,11 +78,28 @@ def run_cppcheck_on_compile_command(outdirpath, compile_command_database_path, p
 def run_infer_on_compile_command(outdirpath, compile_command_database_path, project_name, is_ctu):
     result_folder = generate_analysis_output_folderpath(outdirpath, "infer")
 
-    return_code = subprocess.call([INFER_PATH, "run",
+    # Potentially handle infer issues
+    new_comp_command_path = compile_command_database_path + "_FBInfer_scrubbed.json"
+    with open(compile_command_database_path, "r") as comp_db:
+        comp_cmd_data = comp_db.read()
+        for problem_flag in INFER_UNSUPPORTED_FLAGS:
+            if problem_flag in comp_cmd_data:
+                LOG.warning(f"Found compilation flag {problem_flag} that has been problem in Infer. Removing it")
+                comp_cmd_data = comp_cmd_data.replace(problem_flag, '')
+        with open(new_comp_command_path, 'w') as new_comp_cmd:
+            new_comp_cmd.write(comp_cmd_data)
+
+    infer_invocation = [INFER_PATH, "run",
                                "-o", result_folder,  # output folder
-                               "--compilation-database", compile_command_database_path])
-    if return_code == 0:
+                               "--compilation-database", new_comp_command_path]
+    LOG.info(f"Running Infer with following command: {infer_invocation}")
+    run_result = subprocess.run(infer_invocation, capture_output=True)
+    if run_result.returncode == 0:
         analysis_post_process(result_folder, "fbinfer", project_name, args.server_product)
+        # Clean up the temporary infer-specific compilation database
+        os.remove(new_comp_command_path)
+    else:
+        LOG.error(f"Infer run did not succeed. Error log: {run_result.stderr}")
 
 
 def run_codechecker_on_compile_command(outdirpath, compile_command_database_path, project_name, is_ctu):
@@ -88,8 +108,8 @@ def run_codechecker_on_compile_command(outdirpath, compile_command_database_path
     codechecker_command = [CODECHECKER_MAINSCRIPT_PATH, "analyze", "-o", result_folder]
 
     # If we've defined a skipfile to use
-    if CODECHECKER_SKIPFILE_PATH:
-        codechecker_command.extend(["-i", CODECHECKER_SKIPFILE_PATH])
+    # if CODECHECKER_SKIPFILE_PATH:
+    #     codechecker_command.extend(["-i", CODECHECKER_SKIPFILE_PATH])
     if is_ctu:
         codechecker_command.append("--ctu-all")
     codechecker_command.append(compile_command_database_path)
@@ -109,15 +129,20 @@ def generate_test_compile_commands(original_commands_path):
     make_filtered_compile_command(original_commands_path, is_testware_translation_unit, new_compile_command_file)
     return new_compile_command_file
 
+def remove_non_CPP_code_TUs(comp_command_entry):
+    filename = comp_command_entry["file"]
+    name, ext = os.path.splitext(filename)
+    return ext.lower() in ['.c', '.cc', '.cpp']
+
 
 def run_tools_on_compile_command(compcommand_path, runners_and_ctuflag_pair, project_name, on_testware_only=True):
     """Given a list of (possibly CTU-based) tools, run all tools on @compcommand_path"""
     compcom_dirpath, compcomname = os.path.split(compcommand_path)
     # Do filtering of compile command to only include testware
-    # TODO: Fix horrible naming of variables
     command_file_to_use = compcommand_path
     if on_testware_only:
         command_file_to_use = generate_test_compile_commands(compcommand_path)
+    make_filtered_compile_command(command_file_to_use, remove_non_CPP_code_TUs, "compile_commands.json")
     for runner, is_ctu in runners_and_ctuflag_pair:
         # Check if it's a CTU analysis, 
         # if so we should include all the build files for the AST generation step
@@ -155,12 +180,6 @@ analyzer_mapping = {
     'cppcheck': (run_cppcheck_on_compile_command, False),
     'infer': (run_infer_on_compile_command, False)
 }
-analyzer_mapping_v2 = {
-    'codechecker': (run_codechecker_on_compile_command, False),
-    'codechecker_ctu': (run_codechecker_on_compile_command, True),
-    'cppcheck': analyzers.cppcheck.CppCheck(),
-    'infer': (run_infer_on_compile_command, False)
-}
 
 
 def get_all_c_cpp_analyzers():
@@ -184,7 +203,7 @@ def get_analyzers_to_run(analyzer_string_list):
 def run_analyzers_on_project(proj_path, analyzers_to_run):
     # If script user has set specific project name, override the one grabbed from path
     project_name = args.project_name if bool(args.project_name) else os.path.basename(proj_path)
-
+    os.chdir(proj_path)
     # prefer the manually generated compile command file to the one autogenerated by e.g. CMake
     # Reasonably, if both exist, something was lacking in the first one
     autogenerated_build_commands = glob.glob(f"{proj_path}/**/compile_commands.json", recursive=True)
@@ -200,10 +219,13 @@ def run_analyzers_on_project(proj_path, analyzers_to_run):
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    os.chdir(args.path)
+    if not os.path.isdir(args.path):
+        LOG.error("Invalid project path. Exiting ...")
+        print("Invalid project path. ")
+        exit(1)
     tools_list = args.tools.split(";")
     tools = [t for t in get_analyzers_to_run(tools_list) if t is not None]
-    dirs = [args.path]
+    dirs = [os.path.abspath(args.path)]
     if args.recursive:
         dirs = [os.path.abspath(d) for d in next(os.walk(args.path))[1]]
     for d in dirs:

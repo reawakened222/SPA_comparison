@@ -11,6 +11,8 @@ INFER_PATH = os.getenv("INFER_PATH", shutil.which("infer"))
 logging.basicConfig("INFER.log", level=logging.DEBUG)
 LOG = logging.getLogger("FB_INFER")
 
+INFER_UNSUPPORTED_FLAGS = ['-pass-exit-codes']
+
 class FBInfer(Analyzer):
     def __init__(self):
         super().__init__("fbinfer", False, True, ["C", "C++", "Java"])
@@ -45,8 +47,6 @@ class FBInfer(Analyzer):
                 infer_invocation_command.append("--")
                 if build_system == BuildSystem.Ant:
                     infer_invocation_command.extend(["ant", "test"])
-                elif build_system == BuildSystem.Bazel:
-                    infer_invocation_command.extend(["bazel", "test"])
                 elif build_system == BuildSystem.Gradle:
                     infer_invocation_command.extend(["./gradlew", "test"])
                 elif build_system == BuildSystem.Maven:
