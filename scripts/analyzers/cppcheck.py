@@ -1,7 +1,7 @@
 import os
 import shutil
 from codechecker_interface import gen_convert_to_codechecker_command
-from analyzer_parent import Analyzer
+from .analyzer_parent import Analyzer
 
 CPPCHECK_PATH = os.getenv("CPPCHECK_PATH", shutil.which("cppcheck"))
 
@@ -22,5 +22,7 @@ class CppCheck(Analyzer):
                  f"--project={compile_command_database}",  # compile commands to use
                  f"--plist-output={result_folder}"]
                 ], result_folder
+
+
 
 
