@@ -6,7 +6,7 @@ import pathlib
 import subprocess
 import sys
 import json
-import argparse
+from framework_utils import get_framework_args
 from datetime import datetime
 from analyzers.fbinfer import INFER_UNSUPPORTED_FLAGS
 
@@ -21,36 +21,7 @@ INFER_PATH = os.getenv("INFER_PATH", shutil.which("infer"))
 logging.basicConfig(filename='C_CPP.log', filemode='w', format='%(asctime)s %(message)s')
 LOG = logging.getLogger("C_CPP")
 
-
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
-
-
-parser = argparse.ArgumentParser(description='Run analysers')
-parser.add_argument('--path', '-p', help='Path to run script on')
-parser.add_argument('--recursive', '-r', help='run script on all folders in path',
-                    type=str2bool, required=False, default=False)
-parser.add_argument('--project-name', '-out',
-                    help='If set, this is the base name used to store the runs in the framework',
-                    required=False, default='')
-parser.add_argument('--tools', '-t', help='A semicolon-separated list of the following analysis tools to run: ' +
-                                          '{all, codechecker, codechecker_ctu, cppcheck, infer}',
-                    required=False, default='all')
-parser.add_argument('--only-tests', '-at', help='Whether analysis should only be run on tests',
-                    type=str2bool, required=False, default=False)
-parser.add_argument('--no-upload',
-                    help='Set to true if you do not want to upload to framework (e.g. debugging of toolchain)',
-                    type=str2bool, required=False, default=False)
-parser.add_argument('--server-product',
-                    help='Set which product collection to upload to within the framework',
-                    required=False, default="Default")
+parser = get_framework_args("C++")
 
 
 def make_filtered_compile_command(compile_command_path, filter_function=is_testware_translation_unit,
@@ -129,25 +100,25 @@ def generate_test_compile_commands(original_commands_path):
     make_filtered_compile_command(original_commands_path, is_testware_translation_unit, new_compile_command_file)
     return new_compile_command_file
 
-def remove_non_CPP_code_TUs(comp_command_entry):
+def is_c_cpp_file(comp_command_entry):
     filename = comp_command_entry["file"]
     name, ext = os.path.splitext(filename)
     return ext.lower() in ['.c', '.cc', '.cpp']
 
 
-def run_tools_on_compile_command(compcommand_path, runners_and_ctuflag_pair, project_name, on_testware_only=True):
+def run_tools_on_compile_command(comp_command_path, runners_and_ctuflag_pair, project_name, on_testware_only=True):
     """Given a list of (possibly CTU-based) tools, run all tools on @compcommand_path"""
-    compcom_dirpath, compcomname = os.path.split(compcommand_path)
+    compcom_dirpath, compcomname = os.path.split(comp_command_path)
     # Do filtering of compile command to only include testware
-    command_file_to_use = compcommand_path
+    command_file_to_use = comp_command_path
     if on_testware_only:
-        command_file_to_use = generate_test_compile_commands(compcommand_path)
-    make_filtered_compile_command(command_file_to_use, remove_non_CPP_code_TUs, "compile_commands.json")
+        command_file_to_use = generate_test_compile_commands(comp_command_path)
+    make_filtered_compile_command(command_file_to_use, is_c_cpp_file, "compile_commands.json")
     for runner, is_ctu in runners_and_ctuflag_pair:
         # Check if it's a CTU analysis, 
         # if so we should include all the build files for the AST generation step
         # Otherwise, run it with the filtered one
-        command_file_to_use = compcommand_path if is_ctu else command_file_to_use
+        command_file_to_use = comp_command_path if is_ctu else command_file_to_use
         runner(compcom_dirpath, command_file_to_use, project_name, is_ctu)
 
 
@@ -174,7 +145,7 @@ def run_tools_on_project_oop_style(target_path, analyzers, project_name):
 
 
 
-analyzer_mapping = {
+c_cpp_analyzer_mapping = {
     'codechecker': (run_codechecker_on_compile_command, False),
     'codechecker_ctu': (run_codechecker_on_compile_command, True),
     'cppcheck': (run_cppcheck_on_compile_command, False),
@@ -183,12 +154,12 @@ analyzer_mapping = {
 
 
 def get_all_c_cpp_analyzers():
-    return [analyzer for name, analyzer in analyzer_mapping.items()]
+    return [analyzer for name, analyzer in c_cpp_analyzer_mapping.items()]
 
 
 def get_analyzers_to_run(analyzer_string_list):
     def analyze_map(analyzer):
-        return analyzer_mapping.get(analyzer, None)
+        return c_cpp_analyzer_mapping.get(analyzer, None)
 
     # Figure out from the passed list of strings what tools we want to run
     res_list = []
@@ -220,8 +191,7 @@ def run_analyzers_on_project(proj_path, analyzers_to_run):
 if __name__ == "__main__":
     args = parser.parse_args()
     if not os.path.isdir(args.path):
-        LOG.error("Invalid project path. Exiting ...")
-        print("Invalid project path. ")
+        print(f"Invalid project path {args.path}.")
         exit(1)
     tools_list = args.tools.split(";")
     tools = [t for t in get_analyzers_to_run(tools_list) if t is not None]
