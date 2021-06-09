@@ -2,10 +2,10 @@ import logging
 import os
 from enum import Enum
 from codechecker_interface import CODECHECKER_MAINSCRIPT_PATH
+from compile_command_utils import COMPILE_COMMAND_DEFAULT
 
 CMAKE_BUILD_DIRECTORY_NAME = "cmakebuild"
 CMAKE_COMPILE_COMMAND_DEFAULT = "compile_commands.json"
-COMPILE_COMMAND_DEFAULT = CMAKE_COMPILE_COMMAND_DEFAULT # In case they may be separated
 
 # TODO: Would be good to add some generator for build setup and triggering compilation
 # TODO: Refactor this into base- and subclasses instead of enum
