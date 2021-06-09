@@ -31,7 +31,7 @@ class ProjectSize(IntEnum):
 
 
 
-class ClocData:
+class LoCData:
     project_path = ""
     lang_data = dict()
     total_code_size = -1
@@ -63,7 +63,7 @@ class ClocData:
                 lang_data_dict[attr["name"]] = LangData(int(attr["files_count"]), int(attr["blank"]),
                                                         int(attr["comment"]), int(attr["code"]))
                 size += int(attr["code"])
-        return ClocData(lang_data_dict, size, run_path)
+        return LoCData(lang_data_dict, size, run_path)
 
     def classify(self, language="C++"):
         """Return Small, Medium, or large-scale based on #LoC for language of interest"""
@@ -101,5 +101,5 @@ def cloc_invocation(languages, top_folder=".", perl_dir_filter=""):
     if cloc_res.returncode == 0 and not cloc_res.stderr:
         output = cloc_res.stdout.decode("utf-8").strip()
         LOG.debug("CLOC OUTPUT for repo: " + top_folder + ": " + output)
-        return ClocData.make_from_string(output, top_folder)
+        return LoCData.make_from_string(output, top_folder)
     return None

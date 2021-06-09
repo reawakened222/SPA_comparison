@@ -3,6 +3,11 @@ import json
 import sys
 import glob
 import argparse
+
+COMPILE_COMMAND_DEFAULT = "compile_commands.json" # In case they may be separated
+def find_compilation_databases(rootdir):
+    return glob.glob('*/**/' + COMPILE_COMMAND_DEFAULT, recursive=True)
+
 def is_testware_translation_unit(compile_command_entry):
     return ("test" in str(compile_command_entry["directory"]).lower() or 
             "test" in str(compile_command_entry["file"]).lower())

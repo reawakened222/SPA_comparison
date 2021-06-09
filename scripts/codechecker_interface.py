@@ -14,7 +14,7 @@ USER = os.getenv("HOME")
 CODECHECKER_PATH = f"{USER}/codechecker"
 CODECHECKER_SCRIPTS_DIR = f"{CODECHECKER_PATH}/codechecker-common"
 CODECHECKER_BIN_PATH = f"{CODECHECKER_PATH}/build/CodeChecker/bin"
-CODECHECKER_RESULTCONVERTER_PATH = f"{CODECHECKER_BIN_PATH}report-converter"
+CODECHECKER_RESULTCONVERTER_PATH = f"{CODECHECKER_BIN_PATH}/report-converter"
 CODECHECKER_MAINSCRIPT_PATH = f"{CODECHECKER_BIN_PATH}/CodeChecker"
 # CODECHECKER_SKIPFILE_PATH = f"{USER}/spa_comparison/C_Cpp/codechecker_skipfile"
 sys.path.extend(CODECHECKER_SCRIPTS_DIR)
@@ -35,12 +35,12 @@ def gen_convert_to_codechecker_command(analysis_output, analyzer_name, converted
             analyzer_name, "-o", converted_output, analysis_output]
 
 
-def convert_and_store_to_codechecker(analysis_outputpath, codechecker_outputpath,
+def convert_and_store_to_codechecker(analysis_outputpath, conversion_output,
                                      analyzer, project_name, store_name_suffix="", server_product_name="Default"):
-    res = subprocess.run(gen_convert_to_codechecker_command(analysis_outputpath, analyzer, codechecker_outputpath))
+    res = subprocess.run(gen_convert_to_codechecker_command(analysis_outputpath, analyzer, conversion_output))
     if res.returncode != 0:
         return False
-    return store_to_codechecker(codechecker_outputpath,
+    return store_to_codechecker(conversion_output,
                                 f'{project_name}_{analyzer}{store_name_suffix}',
                                 server_product_name)
 
