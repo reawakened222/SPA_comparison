@@ -8,7 +8,7 @@ import sys
 import json
 from framework_utils import get_framework_args
 from datetime import datetime
-from analyzers.fbinfer import INFER_UNSUPPORTED_FLAGS
+from analyzers.fbinfer import INFER_UNSUPPORTED_FLAGS, INFER_ALL_C_FLAGS
 
 # sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 from analyzers.cppcheck import CppCheck
@@ -39,10 +39,13 @@ def run_cppcheck_on_compile_command(outdirpath, compile_command_database_path, p
     result_folder = generate_analysis_output_folderpath(outdirpath, "cppcheck")
     # Since CppCheck does not create output folders automatically, we must make sure it exists
     subprocess.call(["mkdir", "-p", result_folder])
-    return_code = subprocess.call([CPPCHECK_PATH, "--enable=all", "--inconclusive",
+    run_result = subprocess.run(["time", "-v", CPPCHECK_PATH, "--enable=all", "--inconclusive",
                                f"--project={compile_command_database_path}",  # compile commands to use
-                               f"--plist-output={result_folder}"])  # output folder
-    if return_code == 0:
+                               f"--plist-output={result_folder}"], capture_output=True)  # output folder
+    with open(f"{outdirpath}/infer_analysistime.log", "w+") as timelog:
+        timelog.write(f'{datetime.now().strftime("%Y_%m_%d_%H_%M_%S")}\n')
+        timelog.write(run_result.stdout)
+    if run_result == 0:
         analysis_post_process(result_folder, "cppcheck", project_name, args.server_product)
 
 
@@ -60,17 +63,23 @@ def run_infer_on_compile_command(outdirpath, compile_command_database_path, proj
         with open(new_comp_command_path, 'w') as new_comp_cmd:
             new_comp_cmd.write(comp_cmd_data)
 
-    infer_invocation = [INFER_PATH, "run",
-                               "-o", result_folder,  # output folder
-                               "--compilation-database", new_comp_command_path]
+    infer_invocation = ["time", "-v", f"{INFER_PATH}/infer", "run"]
+    infer_invocation.extend(INFER_ALL_C_FLAGS)  # Ensure that all C/C++ analyses are being run
+    infer_invocation.extend(["-o", result_folder,  # output folder
+                               "--compilation-database", new_comp_command_path])
+
     LOG.info(f"Running Infer with following command: {infer_invocation}")
     run_result = subprocess.run(infer_invocation, capture_output=True)
+    with open(f"{outdirpath}/infer_analysistime.log", "w+") as timelog:
+        timelog.write(f'{datetime.now().strftime("%Y_%m_%d_%H_%M_%S")}\n')
+        timelog.write(run_result.stdout)
     if run_result.returncode == 0:
         analysis_post_process(result_folder, "fbinfer", project_name, args.server_product)
         # Clean up the temporary infer-specific compilation database
         os.remove(new_comp_command_path)
     else:
         LOG.error(f"Infer run did not succeed. Error log: {run_result.stderr}")
+        print(f"Infer run did not succeed. Error log: {run_result.stderr}")
 
 
 def run_codechecker_on_compile_command(outdirpath, compile_command_database_path, project_name, is_ctu):
@@ -78,9 +87,6 @@ def run_codechecker_on_compile_command(outdirpath, compile_command_database_path
     result_folder = generate_analysis_output_folderpath(outdirpath, f"codechecker{result_folder_suffix}")
     codechecker_command = [CODECHECKER_MAINSCRIPT_PATH, "analyze", "-o", result_folder]
 
-    # If we've defined a skipfile to use
-    # if CODECHECKER_SKIPFILE_PATH:
-    #     codechecker_command.extend(["-i", CODECHECKER_SKIPFILE_PATH])
     if is_ctu:
         codechecker_command.append("--ctu-all")
     codechecker_command.append(compile_command_database_path)
@@ -139,10 +145,6 @@ def run_tools_on_project_oop_style(target_path, analyzers, project_name):
             final_result_path = analysis_path
         if not args.no_upload:
             store_to_codechecker(final_result_path, analyzer.get_analysis_run_name(project_name), args.server_product)
-
-
-
-
 
 
 c_cpp_analyzer_mapping = {
