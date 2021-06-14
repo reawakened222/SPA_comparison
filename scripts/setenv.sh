@@ -9,8 +9,9 @@ export CC_LOGGER_FILE="$CC_LOGGER_FILE"
 export LOC_COUNTER_PATH=$(which cloc)
 export COMPLEXITY_TOOL=$(which pmccabe)
 
-export PATH="$(pwd):$PATH"
-
+# Add this directory to PATH
+SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
+export PATH="$SCRIPT_DIR:$PATH"
 
 log_bazel_build()
 {
