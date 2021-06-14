@@ -8,8 +8,9 @@ import logging
 from dotenv import load_dotenv
 import argh
 import pickle
+script_path = os.path.abspath(os.path.dirname(__file__))
 
-load_dotenv(".env")
+load_dotenv(f"{script_path}/.env")
 CLOC_BIN = os.getenv("CLOC_BIN", '/usr/bin/cloc')
 
 logging.basicConfig(filename="CLOC.log", format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.DEBUG)
@@ -100,7 +101,7 @@ class LoCData:
 
 def cloc_invocation(languages, top_folder=".", perl_dir_filter=""):
     directory_filter = "--match-d=" + perl_dir_filter if perl_dir_filter != "" else ""
-    invocation = [CLOC_BIN, f'--include-lang={",".join(languages)}', '--xml', '--quiet', '--timeout', '0']
+    invocation = [f"{CLOC_BIN}/cloc", f'--include-lang={",".join(languages)}', '--xml', '--quiet', '--timeout', '0']
 
     if directory_filter != "":
         invocation.append(directory_filter)
@@ -127,10 +128,11 @@ def get_cloc_store_csv(basepath, result_directory='.', reject_projects='', clear
         result_file_name = f"{result_directory}/{name}_LoCData.csv"
         if not os.path.exists(result_file_name) or clear_cache:
             cloc_result = cloc_invocation(["C", "C++", 'C/C++ Header', "Python", "Java"], path)
-            cloc_result.project_name = name
-            with open(result_file_name, 'w') as fp:
-                fp.write(f'name,language,files,blanklines,comments,code\n')
-                fp.write(cloc_result.save_to_string())
+            if cloc_result is not None:
+                cloc_result.project_name = name
+                with open(result_file_name, 'w') as fp:
+                    fp.write(f'name,language,files,blanklines,comments,code\n')
+                    fp.write(cloc_result.save_to_string())
 
 
 parser = argh.ArghParser()
