@@ -1,3 +1,4 @@
+import glob
 from enum import IntEnum
 import xml.etree.ElementTree as ET
 from collections import namedtuple
@@ -5,6 +6,8 @@ import subprocess
 import os
 import logging
 from dotenv import load_dotenv
+import argh
+import pickle
 
 load_dotenv(".env")
 CLOC_BIN = os.getenv("CLOC_BIN", '/usr/bin/cloc')
@@ -32,9 +35,10 @@ class ProjectSize(IntEnum):
 
 
 class LoCData:
-    project_path = ""
+    project_path = ''
     lang_data = dict()
     total_code_size = -1
+    project_name = ''
 
     def __init__(self, lang_data_dict, size, path):
         self.lang_data = lang_data_dict
@@ -45,6 +49,12 @@ class LoCData:
         if isinstance(item, str):
             return self.lang_data[item]
         return None
+
+    def save_to_string(self):
+        res = ""
+        for key, val in self.lang_data.items():
+            res += f"{self.project_name},{key},{val[0]},{val[1]},{val[2]},{val[3]}" + "\n"
+        return res
 
     @staticmethod
     def make_from_string(cloc_output, run_path):
@@ -91,6 +101,7 @@ class LoCData:
 def cloc_invocation(languages, top_folder=".", perl_dir_filter=""):
     directory_filter = "--match-d=" + perl_dir_filter if perl_dir_filter != "" else ""
     invocation = [CLOC_BIN, f'--include-lang={",".join(languages)}', '--xml', '--quiet']
+
     if directory_filter != "":
         invocation.append(directory_filter)
     invocation.append(top_folder)
@@ -103,3 +114,24 @@ def cloc_invocation(languages, top_folder=".", perl_dir_filter=""):
         LOG.debug("CLOC OUTPUT for repo: " + top_folder + ": " + output)
         return LoCData.make_from_string(output, top_folder)
     return None
+
+
+def get_cloc_store_csv(basepath, pickletargetpath='.', reject_projects=''):
+    proj_list = glob.glob(f"{basepath}/**/", recursive=False)
+    rejected = reject_projects.split(';')
+    proj_list_names = [(os.path.basename(os.path.dirname(t)), os.path.dirname(t)) for t in proj_list]
+    if rejected:
+        proj_list_names = [(name, path) for name, path in proj_list_names if name not in rejected]
+
+    for name, path in proj_list_names:
+        cloc_result = cloc_invocation(["C", "C++", 'C/C++ Header', "Python", "Java"], path)
+        cloc_result.project_name = name
+        with open(f'{pickletargetpath}/{name}_LoCData.csv', 'w') as fp:
+            fp.write(f'name,language,files,blanklines,comments,code\n')
+            fp.write(cloc_result.save_to_string())
+
+
+parser = argh.ArghParser()
+parser.add_commands([get_cloc_store_csv])
+if __name__ == '__main__':
+    parser.dispatch()
