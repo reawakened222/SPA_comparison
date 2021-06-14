@@ -21,7 +21,7 @@ lang_analyzers_mapping = {
 
 def get_framework_args(language):
     parser = argparse.ArgumentParser(description='Run analysers')
-    parser.add_argument('--path', '-p', help='Path to run script on')
+    parser.add_argument('--path', '-p', help='Path to run script on', required=True)
     parser.add_argument('--recursive', '-r', help='run script on all folders in path',
                         type=str2bool, required=False, default=False)
     parser.add_argument('--project-name', '-out',
