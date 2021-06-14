@@ -3,15 +3,36 @@ import os
 import pathlib
 import shutil
 from codechecker_interface import gen_convert_to_codechecker_command
-from analyzer_parent import Analyzer
+from analyzers.analyzer_parent import Analyzer
 from build_system_handler import *
 import subprocess
 
 INFER_PATH = os.getenv("INFER_PATH", shutil.which("infer"))
-logging.basicConfig("INFER.log", level=logging.DEBUG)
+logging.basicConfig(filename="INFER.log", level=logging.INFO)
 LOG = logging.getLogger("FB_INFER")
 
 INFER_UNSUPPORTED_FLAGS = ['-pass-exit-codes']
+
+INFER_ALL_CHECK_FLAGS = [('--annotation-reachability', ['C', 'Java', '.NET']),
+                         ('--biabduction', ['C', 'Java', '.NET']),
+                         ('--bufferoverrun', ['C', 'Java', '.NET']),
+                         ('--impurity', ['C', 'Java', '.NET']),
+                         ('--inefficient-keyset-iterator', ['Java', '.NET']),
+                         ('--litho-required-props', ['Java', '.NET']),
+                         ('--liveness', ['C']),
+                         ('--loop-hoisting', ['C', 'Java', '.NET']),
+                         ('--pulse', ['C', 'Java']),
+                         ('--purity', ['C', 'Java', '.NET']),
+                         ('--quandary', ['C', 'Java', '.NET']),
+                         ('--racerd', ['C', 'Java', '.NET']),
+                         ('--siof', ['C']),
+                         ('--starvation', ['C', 'Java', '.NET']),
+                         ('--uninit', ['C'])
+                         ]
+
+INFER_ALL_C_FLAGS = [flag for (flag, langs) in INFER_ALL_CHECK_FLAGS if 'C' in langs]
+INFER_ALL_JAVA_FLAGS = [flag for (flag, langs) in INFER_ALL_CHECK_FLAGS if 'Java' in langs]
+
 
 class FBInfer(Analyzer):
     def __init__(self):
