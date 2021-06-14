@@ -32,6 +32,7 @@ INFER_ALL_CHECK_FLAGS = [('--annotation-reachability', ['C', 'Java', '.NET']),
 
 INFER_ALL_C_FLAGS = [flag for (flag, langs) in INFER_ALL_CHECK_FLAGS if 'C' in langs]
 INFER_ALL_JAVA_FLAGS = [flag for (flag, langs) in INFER_ALL_CHECK_FLAGS if 'Java' in langs]
+INFER_ALL_NET_FLAGS = [flag for (flag, langs) in INFER_ALL_CHECK_FLAGS if '.NET' in langs]
 
 
 class FBInfer(Analyzer):
