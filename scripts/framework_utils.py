@@ -1,4 +1,29 @@
 import argparse
+import logging
+import subprocess
+
+
+def get_time_logger(language, tool):
+    logging.basicConfig(filename=f'{language}_{tool}_timings.log',
+                        format='%(asctime)s %(message)s',
+                        datefmt='%m/%d/%Y %I:%M:%S %p',
+                        level=logging.INFO)
+    return logging.getLogger(f'{language}_{tool}_time')
+
+
+def time_invocation_log(language, tool, invocation):
+    """
+    Some boilerplate for coarse end-to-end timing logging of a tool invocation
+    Returns the result for processing by the caller
+    """
+    log = get_time_logger(language, tool)
+    timing_injected_invocation = ['time', '-v']
+    timing_injected_invocation.extend(invocation)
+    log.info(f'{tool} run {invocation}: STARTED')
+    res = subprocess.run(invocation, capture_output=True)
+    log.info(f'{tool} run {invocation}: ENDED')
+    return res
+
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -15,7 +40,7 @@ lang_analyzers_mapping = {
     'java': ['pmd', 'spotbugs', 'infer'],
     'c': ['codechecker', 'codechecker', 'codechecker_ctu', 'cppcheck', 'infer'],
     'c++': ['codechecker', 'codechecker', 'codechecker_ctu', 'cppcheck', 'infer'],
-    'python': ['pylint', 'pyre']
+    'python': ['pylama', 'pyre']
 }
 
 

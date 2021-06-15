@@ -42,7 +42,7 @@ class SearchParameter:
 
 class SearchData:
     """Collection of search data, with pretty printing"""
-    size_in_kb = 20000
+    size_in_kb = 100000
     stars = 1000
     forks = 1000
     search_string = "test"
