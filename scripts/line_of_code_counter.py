@@ -107,14 +107,17 @@ class LoCData:
         return ProjectSize.get_size_from_loc_count(self.total_code_size)
 
 
-def cloc_invocation(languages, top_folder=".", perl_dir_filter="", disable_timeout=False):
+def cloc_invocation(languages, top_folder=".", perl_dir_filter="", perl_file_filter='', disable_timeout=False):
     directory_filter = "--match-d=" + perl_dir_filter if perl_dir_filter != "" else ""
+    file_filter = '--match-f=' + perl_file_filter if perl_file_filter != '' else ''
     invocation = [f"{CLOC_BIN}/cloc", f'--include-lang={",".join(languages)}', '--xml', '--quiet']
     if disable_timeout:
         invocation.extend(['--timeout', '0'])
 
     if directory_filter != "":
         invocation.append(directory_filter)
+    if file_filter != '':
+        invocation.append(file_filter)
     invocation.append(top_folder)
     cloc_res = subprocess.run(invocation, capture_output=True)
     if cloc_res.stderr:
@@ -130,7 +133,7 @@ def cloc_invocation(languages, top_folder=".", perl_dir_filter="", disable_timeo
 def get_cloc_store_csv(basepath, result_directory='.',
                        reject_projects='', clear_cache=False,
                        disable_timeout=False, perl_folder_filter='',
-                       append_log_name=''):
+                       perl_file_filter='', append_log_name=''):
     proj_list = glob.glob(f"{basepath}/**/", recursive=False)
     rejected = reject_projects.split(';')
     proj_list_names = [(os.path.basename(os.path.dirname(t)), os.path.dirname(t)) for t in proj_list]
@@ -140,7 +143,7 @@ def get_cloc_store_csv(basepath, result_directory='.',
     for name, path in proj_list_names:
         result_file_name = f"{result_directory}/{name}_LoCData{append_log_name}.csv"
         if not os.path.exists(result_file_name) or clear_cache:
-            cloc_result = cloc_invocation(["C", "C++", 'C/C++ Header', "Python", "Java"], path, perl_folder_filter)
+            cloc_result = cloc_invocation(["C", "C++", 'C/C++ Header', "Python", "Java"], path, perl_folder_filter, perl_file_filter)
             if cloc_result is not None:
                 cloc_result.project_name = name
                 with open(result_file_name, 'w') as fp:
