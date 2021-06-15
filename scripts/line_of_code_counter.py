@@ -53,8 +53,16 @@ class LoCData:
 
     def save_to_string(self):
         res = ""
+        c_cpp_files, c_cpp_loc = 0, 0
+        #name	language	files	code
         for key, val in self.lang_data.items():
-            res += f"{self.project_name},{key},{val[0]},{val[1]},{val[2]},{val[3]}" + "\n"
+            if key not in ['C', 'C++', 'C/C++ Header']:
+                res += f"{self.project_name},{key},{val[0]},{val[3]}" + "\n"
+            else:
+                c_cpp_files += val[0]
+                c_cpp_loc += val[3]
+        if c_cpp_loc > 0:
+            res += f"{self.project_name},C/C++,{c_cpp_files},{c_cpp_loc}" + "\n"
         return res
 
     @staticmethod
@@ -99,9 +107,11 @@ class LoCData:
         return ProjectSize.get_size_from_loc_count(self.total_code_size)
 
 
-def cloc_invocation(languages, top_folder=".", perl_dir_filter=""):
+def cloc_invocation(languages, top_folder=".", perl_dir_filter="", disable_timeout=False):
     directory_filter = "--match-d=" + perl_dir_filter if perl_dir_filter != "" else ""
-    invocation = [f"{CLOC_BIN}/cloc", f'--include-lang={",".join(languages)}', '--xml', '--quiet', '--timeout', '0']
+    invocation = [f"{CLOC_BIN}/cloc", f'--include-lang={",".join(languages)}', '--xml', '--quiet']
+    if disable_timeout:
+        invocation.extend(['--timeout', '0'])
 
     if directory_filter != "":
         invocation.append(directory_filter)
@@ -117,7 +127,10 @@ def cloc_invocation(languages, top_folder=".", perl_dir_filter=""):
     return None
 
 
-def get_cloc_store_csv(basepath, result_directory='.', reject_projects='', clear_cache=False):
+def get_cloc_store_csv(basepath, result_directory='.',
+                       reject_projects='', clear_cache=False,
+                       disable_timeout=False, perl_folder_filter='',
+                       append_log_name=''):
     proj_list = glob.glob(f"{basepath}/**/", recursive=False)
     rejected = reject_projects.split(';')
     proj_list_names = [(os.path.basename(os.path.dirname(t)), os.path.dirname(t)) for t in proj_list]
@@ -125,13 +138,13 @@ def get_cloc_store_csv(basepath, result_directory='.', reject_projects='', clear
         proj_list_names = [(name, path) for name, path in proj_list_names if name not in rejected]
 
     for name, path in proj_list_names:
-        result_file_name = f"{result_directory}/{name}_LoCData.csv"
+        result_file_name = f"{result_directory}/{name}_LoCData{append_log_name}.csv"
         if not os.path.exists(result_file_name) or clear_cache:
-            cloc_result = cloc_invocation(["C", "C++", 'C/C++ Header', "Python", "Java"], path)
+            cloc_result = cloc_invocation(["C", "C++", 'C/C++ Header', "Python", "Java"], path, perl_folder_filter)
             if cloc_result is not None:
                 cloc_result.project_name = name
                 with open(result_file_name, 'w') as fp:
-                    fp.write(f'name,language,files,blanklines,comments,code\n')
+                    fp.write(f'name,language,files,code\n')
                     fp.write(cloc_result.save_to_string())
 
 
