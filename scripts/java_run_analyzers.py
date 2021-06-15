@@ -4,8 +4,8 @@ import xml.etree.ElementTree as ET
 import logging
 import os
 from dotenv import load_dotenv
-from framework_utils import get_framework_args
-
+from framework_utils import *
+from analyzers.fbinfer import INFER_ALL_JAVA_FLAGS
 from codechecker_interface import *
 from build_system_handler import *
 SCRIPT_PATH = pathlib.Path(__file__).parent.absolute()
@@ -17,6 +17,7 @@ SPOTBUGS_INSTALL_PATH = os.getenv("SPOTBUGS_PATH")
 
 logging.basicConfig(filename='spa_javaInvocation.log', level=logging.DEBUG, format='%(asctime)s %(message)s\n')
 LOG = logging.getLogger("SPA_JAVA")
+TIMELOG = get_time_logger('java')
 
 parser = get_framework_args("java")
 args = None
@@ -24,14 +25,18 @@ args = None
 def run_spotbugs_on_target(target_dir):
     result_dir = generate_analysis_output_folderpath(target_dir, "spotbugs", True)
     spotbugs_result_file = f"{result_dir}/spotbugs_bugs.xml"
-    res = subprocess.run([f"{SPOTBUGS_INSTALL_PATH}/spotbugs", "-xml:withMessages", "-output",
-                          spotbugs_result_file, "text-ui", target_dir])
+
+    spotbugs_invocation = [f"{SPOTBUGS_INSTALL_PATH}/spotbugs", "-xml:withMessages", "-output",
+                          spotbugs_result_file, "text-ui", target_dir]
+    res = time_invocation_log('Java', 'spotbugs', spotbugs_invocation)
     if res.returncode != 0:
         LOG.error("Spotbugs run failed on " + target_dir)
-        #return False
-    return convert_and_store_to_codechecker(spotbugs_result_file,
+        LOG.error(res.stderr.decode('utf-8'))
+        return False
+    else:
+        return convert_and_store_to_codechecker(spotbugs_result_file,
                                             result_dir + "/spotbugs_results",
-                                        "spotbugs", os.path.dirname(target_dir), "_spotbugs", args.server_product)
+                                            "spotbugs", os.path.dirname(target_dir), "_spotbugs", args.server_product)
 
 
 def add_task_to_ant_build(build_xml, property_string, target_strings):
@@ -83,9 +88,10 @@ def run_pmd_on_target(target_dir):
         shutil.move(new_build, ANT_BUILD_FILE)
 
         # Run new ant build
-        res = subprocess.run(["ant", "pmd"])
+        res = time_invocation_log('Java', 'pmd', ['ant', 'pmd'])
         if res.returncode != 0:
-            print("SPA Comparison: Modified Ant build failed\n")
+            LOG.error("Modified Ant build failed on " + target_dir)
+            LOG.error(res.stderr.decode('utf-8'))
         else:
             # send results to CodeChecker
             convert_and_store_to_codechecker(
@@ -98,26 +104,25 @@ def run_pmd_on_target(target_dir):
         shutil.move("original_build.xml", ANT_BUILD_FILE)
     else:
         # Just try to run it on targetdir
-        res = subprocess.run([f"{PMD_INSTALL_PATH}/bin/run.sh", "pmd", "-d", target_dir,
+        pmd_invocation = [f"{PMD_INSTALL_PATH}/bin/run.sh", "pmd", "-d", target_dir,
                               "-f", "xml", "-R", "rulesets/internal/all-java.xml",
-                              "-reportfile", pmd_result_file], capture_output=True)
-        with open(f"{result_dir}/PMD_log.txt", "w") as f:
-            f.write(str(res.stdout))
-            if res.stderr:
-                f.write(str(res.stderr))
+                              "-reportfile", pmd_result_file]
+        res = time_invocation_log('java', 'pmd', pmd_invocation)
         pmd_violations_found_errorcode = 4
-        #if res.returncode == pmd_violations_found_errorcode:
-        convert_and_store_to_codechecker(
-            f"{pmd_result_file}",
-            f"{result_dir}/pmd_results",
-            "pmd",
-            os.path.dirname(target_dir))
+        if res.returncode == pmd_violations_found_errorcode:
+            convert_and_store_to_codechecker(
+                f"{pmd_result_file}",
+                f"{result_dir}/pmd_results",
+                "pmd",
+                os.path.dirname(target_dir))
 
 
 def run_fbinfer_on_target(target_dir):
     build_system = determine_build_system(target_dir)
     result_dir = generate_analysis_output_folderpath(target_dir, 'infer')
-    infer_invocation_command = [f"{INFER_INSTALL_PATH}/infer", "run", "-o", result_dir, "--"]
+    infer_invocation_command = [f"{INFER_INSTALL_PATH}/infer", "run"]
+    infer_invocation_command.extend(INFER_ALL_JAVA_FLAGS)
+    infer_invocation_command.extend(["-o", result_dir, "--"])
     os.chdir(target_dir)
     if build_system == BuildSystem.UNSUPPORTED:
         LOG.warning("No supported build system found to build " + target_dir)
@@ -139,7 +144,7 @@ def run_fbinfer_on_target(target_dir):
     else:
         LOG.warning("Build system is not supported by Infer")
     LOG.info(f"FB Infer running on {target_dir}")
-    infer_run = subprocess.run(infer_invocation_command, capture_output=True)
+    infer_run = time_invocation_log('java', 'infer', infer_invocation_command)
     if infer_run.returncode != 0:
         # log error to some file
         # for now, will print stdout and stderr
