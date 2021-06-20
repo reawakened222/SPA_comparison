@@ -184,14 +184,20 @@ def run_analyzers_on_project(proj_path, analyzers_to_run):
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    if not os.path.isdir(args.path):
-        print(f"Invalid project path {args.path}.")
-        exit(1)
+    dirs = [os.path.abspath(args.path)]
     tools_list = args.tools.split(";")
     tools = [t for t in get_analyzers_to_run(tools_list) if t is not None]
-    dirs = [os.path.abspath(args.path)]
-    if args.recursive:
-        dirs = [os.path.abspath(d) for d in next(os.walk(args.path))[1]]
-    for d in dirs:
-        print("Running analyzers on " + d)
-        run_analyzers_on_project(d, tools)
+    if len(dirs) == 1 and os.path.isfile(dirs[0]):
+        print("Assuming you've provided a compile commands database")
+        assert(bool(args.project_name))
+        run_tools_on_compile_command(dirs[0], tools, args.project_name, args.only_tests)
+
+    else:
+        if not os.path.isdir(args.path):
+            print(f"Invalid project path {args.path}.")
+            exit(1)
+        if args.recursive:
+            dirs = [os.path.abspath(d) for d in next(os.walk(args.path))[1]]
+        for d in dirs:
+            print("Running analyzers on " + d)
+            run_analyzers_on_project(d, tools)

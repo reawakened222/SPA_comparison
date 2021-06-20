@@ -107,6 +107,19 @@ class LoCData:
         return ProjectSize.get_size_from_loc_count(self.total_code_size)
 
 
+def run_cloc_on_file(directory, file):
+    if not os.path.isabs(file):
+        print("ERROR: file path is not absolute. Perhaps try with " + directory + file + " instead")
+        return None
+    cloc_res = subprocess.run([f"{CLOC_BIN}/cloc", '--xml', '--quiet', file], capture_output=True)
+    if cloc_res.stderr:
+        LOG.error("CLOC error for repo: " + str(cloc_res.stderr))
+        return None
+    if cloc_res.returncode == 0 and not cloc_res.stderr:
+        output = cloc_res.stdout.decode("utf-8").strip()
+        return LoCData.make_from_string(output, file)
+
+
 def cloc_invocation(languages, top_folder=".", perl_dir_filter="", perl_file_filter='', disable_timeout=False):
     directory_filter = "--match-d=" + perl_dir_filter if perl_dir_filter != "" else ""
     file_filter = '--match-f=' + perl_file_filter if perl_file_filter != '' else ''
@@ -143,7 +156,7 @@ def get_cloc_store_csv(basepath, result_directory='.',
     for name, path in proj_list_names:
         result_file_name = f"{result_directory}/{name}_LoCData{append_log_name}.csv"
         if not os.path.exists(result_file_name) or clear_cache:
-            cloc_result = cloc_invocation(["C", "C++", 'C/C++ Header', "Python", "Java"], path, perl_folder_filter, perl_file_filter)
+            cloc_result = cloc_invocation(["C", "C++", 'C/C++ Header'], path, perl_folder_filter, perl_file_filter)
             if cloc_result is not None:
                 cloc_result.project_name = name
                 with open(result_file_name, 'w') as fp:
