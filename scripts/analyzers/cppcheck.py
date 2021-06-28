@@ -1,10 +1,45 @@
 import os
 import shutil
+import subprocess
+import xml.etree.ElementTree as ET
 from codechecker_interface import gen_convert_to_codechecker_command
 from .analyzer_parent import Analyzer
 
 CPPCHECK_PATH = os.getenv("CPPCHECK_PATH", shutil.which("cppcheck"))
 
+
+def cppcheck_to_codechecker_warning_mapping():
+    """
+    As CppCheck warnings are all presented as unknown, we do an initial mapping
+    based on the severity of similar CodeChecker checks:
+    Mapping:
+    severity="error"        => High (H)
+    severity="information"  => Unrecognized (U)
+    severity="performance"  => Low (L)
+    severity="portability"  => Low (L)
+    severity="style"        => Style (S)
+    severity="warning"      => Medium (M)
+    """
+    def base_mapping(cpp_severity):
+        mapper = {'error': 'H',
+                  'information': 'U',
+                  'performance': 'L',
+                  'portability': 'L',
+                  'style': 'S',
+                  'warning': 'M'
+                  }
+        return mapper.get(cpp_severity, 'U')
+    get_error_xml = subprocess.run([CPPCHECK_PATH, '--errorlist'], capture_output=True)
+    if get_error_xml.returncode != 0:
+        print("Something went wrong when grabbing CppCheck error list")
+    errorlist = get_error_xml.stdout.decode('utf-8')
+    root = ET.fromstring(errorlist)
+    errorNodes = root.find('errors').findall('error')
+    return dict([(e.attrib['id'], base_mapping(e.attrib['severity'])) for e in errorNodes])
+
+cpp_to_codechecker_mapper = cppcheck_to_codechecker_warning_mapping()
+def map_warning_severity(warn_id):
+    return cpp_to_codechecker_mapper.get(warn_id, 'NOT_CPPCHECK')
 
 class CppCheck(Analyzer):
     def __init__(self):
